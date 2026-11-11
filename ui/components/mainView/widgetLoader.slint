@@ -1,0 +1,217 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+import { AppState, WidgetType, ComponentData } from "../../appState.slint";
+import { Lamp } from "../lamp.slint";
+import { Appliance } from "../appliance.slint";
+import { Overhead } from "../overhead.slint";
+import { Info } from "../info.slint";
+import { Graph } from "../graph.slint";
+import { Control } from "../control.slint";
+import { MusicPlayer } from "../musicPlayer.slint";
+import { Camera } from "../camera.slint";
+import { HVAC } from "../hvac.slint";
+import { Dishwasher } from "../dishwasher.slint";
+import { Microwave } from "../microwave.slint";
+import { WeatherInfo } from "../weatherInfo.slint";
+import { PowerInfo } from "../powerInfo.slint";
+import { Alarm } from "../alarm.slint";
+import { Animation } from "../../common.slint";
+
+
+export component WidgetLoader {
+    in property <int> index;
+    in property <ComponentData> data;
+    in property <WidgetType> type;
+    property <bool> full-screen: AppState.full-screen-index == root.index;
+    property <ComponentData> effective-data: root.full-screen ? AppState.full-screen-data : root.data;
+    property <bool> show: false;
+    in property <bool> elevated;
+    property <bool> initialized: false;
+    property <bool> animate-geometry: false;
+    property <ComponentData> layout-data;
+    property <length> layout-x;
+    property <length> layout-y;
+    property <length> layout-width;
+    property <length> layout-height;
+    property <duration> fade-duration: 0ms;
+    property <duration> fade-delay: 0ms;
+
+    animate layout-x, layout-y, layout-width, layout-height {
+        duration: root.animate-geometry && (!AppState.first-run || root.elevated)
+            ? (root.elevated ? Animation.full-screen-duration : Animation.transition-duration) : 0ms;
+        easing: ease-in-out-sine;
+    }
+    animate opacity {
+        duration: root.fade-duration;
+        delay: root.fade-delay;
+        easing: ease-in-out-sine;
+    }
+
+    function set-layout(data: ComponentData, motion: bool) {
+        root.animate-geometry = motion;
+        if (motion && data.x != root.layout-data.x) || (!motion && root.layout-x != data.x * 1px) { root.layout-x = data.x * 1px; }
+        if (motion && data.y != root.layout-data.y) || (!motion && root.layout-y != data.y * 1px) { root.layout-y = data.y * 1px; }
+        if (motion && data.width != root.layout-data.width) || (!motion && root.layout-width != data.width * 1px) { root.layout-width = data.width * 1px; }
+        if (motion && data.height != root.layout-data.height) || (!motion && root.layout-height != data.height * 1px) { root.layout-height = data.height * 1px; }
+        root.layout-data = data;
+    }
+
+    function hold-layout() {
+        let x = root.layout-x;
+        let y = root.layout-y;
+        let width = root.layout-width;
+        let height = root.layout-height;
+        root.animate-geometry = false;
+        if x != root.layout-data.x * 1px { root.layout-x = x; }
+        if y != root.layout-data.y * 1px { root.layout-y = y; }
+        if width != root.layout-data.width * 1px { root.layout-width = width; }
+        if height != root.layout-data.height * 1px { root.layout-height = height; }
+    }
+
+    function set-opacity(value: float, fade-time: duration, wait-time: duration) {
+        if root.opacity != value {
+            root.fade-duration = fade-time;
+            root.fade-delay = wait-time;
+            root.opacity = value;
+        }
+    }
+
+    changed effective-data => {
+        if root.initialized {
+            if root.effective-data.visible {
+                if root.show {
+                    root.set-opacity(1, 0ms, 0ms);
+                    root.set-layout(root.effective-data, true);
+                } else {
+                    root.set-opacity(0, 0ms, 0ms);
+                    root.set-layout(root.effective-data, false);
+                    root.set-opacity(1,
+                        AppState.first-run ? 0ms : Animation.transition-duration,
+                        AppState.first-run ? 0ms : Animation.transition-duration / 2);
+                }
+            } else if root.show {
+                root.hold-layout();
+                root.set-opacity(0, AppState.first-run ? 0ms : Animation.transition-duration / 2, 0ms);
+            }
+            root.show = root.effective-data.visible;
+        }
+    }
+
+    init => {
+        root.set-layout(root.effective-data, false);
+        root.show = root.effective-data.visible;
+        root.set-opacity(root.show ? 1 : 0, 0ms, 0ms);
+        root.initialized = true;
+    }
+
+    opacity: 0;
+    x: root.layout-x * AppState.special-x-pos-scale;
+    y: root.layout-y * AppState.special-y-pos-scale;
+    width: root.layout-width * AppState.special-x-pos-scale;
+    height: root.layout-height * AppState.special-y-pos-scale;
+    visible: root.opacity > 0;
+
+    // Use the correct component based on type
+    if root.type == WidgetType.lamp: Lamp {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        index: root.index;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.appliance: Appliance {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.overhead: Overhead {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.info: Info {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.graph: Graph {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.control: Control {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        index: root.index;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.music: MusicPlayer {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        index: root.index;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.camera: Camera {
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        index: root.index;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.hvac: HVAC {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+        full-screen: root.full-screen;
+    }
+    if root.type == WidgetType.microwave: Microwave {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.dishwasher: Dishwasher {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.weatherInfo: WeatherInfo {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+
+    if root.type == WidgetType.powerInfo: PowerInfo {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+    }
+    if root.type == WidgetType.alarm: Alarm {
+        index: root.index;
+        name: AppState.component-details[root.index].name;
+        id: AppState.component-details[root.index].id;
+        width: root.width;
+        height: root.height;
+        full-screen: root.full-screen;
+    }
+}

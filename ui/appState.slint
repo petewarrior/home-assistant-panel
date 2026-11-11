@@ -1,0 +1,263 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+export enum WidgetType { lamp, appliance, overhead, info, graph, control, music, hvac, camera, dishwasher, microwave, alarm, weatherInfo, timeInfo, powerInfo }
+
+export struct ComponentData {
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    visible: bool,
+}
+
+export struct HaEntity {
+    entity_id: string,
+    device_name: string,
+    name: string,
+    state: string,
+    toggleable: bool,
+}
+
+import "fonts/Inter-VariableFont.ttf";
+
+export enum Orientation {
+    portrait,
+    landscape
+}
+
+export global AppState {
+    in-out property <[HaEntity]> ha-entities: [];
+    in-out property <string> ha-status: "Connecting to Home Assistant...";
+
+    in-out property <bool> first-run: true;
+    in-out property <bool> kiosk-mode: false;
+    in property <bool> disable-kiosk-mode: false;
+    callback end-kiosk-mode();
+    end-kiosk-mode => {
+        kiosk-mode = false;
+    }
+    in-out property <int> current-page: 0; // Don't use this directly. Use target-page instead.
+    in-out property <int> target-page: 0;
+    out property <[ComponentData]> current-layout-data: orientation == Orientation.landscape ? landscape-layouts : portrait-layouts;
+    out property <int> layout-offset: current-page * component-details.length;
+    in property <length> window-width: 960px;
+    in property <length> window-height: 540px;
+    out property <Orientation> orientation: window-width > window-height ? landscape : portrait;
+    in property <bool> graphics-accelerator-available: true;
+
+    out property <float> special-x-pos-scale: orientation == Orientation.landscape ? window-width / 1920px : window-width / 1080px;
+    out property <float> special-y-pos-scale: orientation == Orientation.landscape ? window-height / 1080px : window-height / 1920px;
+
+    out property <int> full-screen-index: -1;
+    out property <bool> showing-full-screen: full-screen-index != -1;
+    // Geometry the selected widget grows to. It's in the same coordinate space as the
+    // per page layout data, so the widget just animates from one to the other.
+    out property <ComponentData> full-screen-data: orientation == Orientation.landscape
+        ? { x: 60, y: 60, width: 1800, height: 900, visible: true }
+        : (graphics-accelerator-available
+            ? { x: 60, y: 60, width: 900, height: 1800, visible: true }
+            : { x: 160, y: 560, width: 800, height: 800, visible: true });
+    callback showFullScreen(int);
+    showFullScreen(index) => {
+        full-screen-index = index;
+    }
+    out property <string> default-font-family: "Inter";
+
+    // Portrait values
+    property <int> margin: 36;
+    property <int> mini-width: 312;
+    property <int> big-width: 486;
+    property <int> mini-col2-x: (2 * margin) + mini-width;
+    property <int> mini-col3-x: (3 * margin) + mini-width * 2;
+    property <int> big-col2-x: (2 * margin) + big-width;
+    // page 1 layout
+    property <int> row1-y: 190;
+    property <int> row2-y: row1-y + mini-height + margin;
+    property <int> row3-y: row2-y + mini-height + margin;
+    property <int> row4-y: row3-y + big-height + margin;
+
+    // page 2 layout
+    property <int> row2-y2: row1-y + mega-height + margin;
+    property <int> row3-y2: row2-y2 + mini-height + margin;
+    property <int> row4-y2: row3-y2 + mini-height + margin;
+
+    // page 3 layout
+    property <int> row2-y3: row1-y + big-height + margin;
+    property <int> row3-y3: row2-y3 + mini-height + margin;
+    property <int> row4-y3: row3-y3 + mini-height + margin;
+
+    property <int> mini-height: 300;
+    property <int> big-height: 420;
+    property <int> mega-height: 500;
+
+    out property <[{id: string, name: string, type: WidgetType }]> component-details: [
+       { id: "lamp1", name: "His\nNightstand", type: WidgetType.lamp },
+       { id: "lamp2", name: "Her\nNightstand", type: WidgetType.lamp },
+       { id: "lamp3", name: "Stove", type: WidgetType.lamp },
+       { id: "lamp4", name: "Front Entry", type: WidgetType.lamp },
+       { id: "lamp5", name: "Back Porch", type: WidgetType.lamp },
+       { id: "lamp6", name: "Yard", type: WidgetType.lamp },
+       { id: "lamp7", name: "Hall Lights", type: WidgetType.lamp },
+       { id: "appliance1",name: "Dishwasher", type: WidgetType.dishwasher },
+       { id: "appliance2",name: "Microwave", type: WidgetType.microwave },
+       { id: "overhead1", name: "Dining Area", type: WidgetType.overhead, },
+       { id: "overhead2", name: "Kitchen Island", type: WidgetType.overhead, },
+       { id: "overhead3", name: "Stove", type: WidgetType.overhead, },
+       { id: "overhead4", name: "Walk-In Closet", type: WidgetType.overhead, },
+       { id: "overhead5",name: "En-Suite Bathroom", type: WidgetType.overhead, },
+       { id: "overhead6",name: "Master Bedroom 1", type: WidgetType.overhead, },
+       { id: "overhead7",name: "Master Bedroom 2", type: WidgetType.overhead, },
+       { id: "overhead8",name: "Master Bedroom 3", type: WidgetType.overhead, },
+       { id: "overhead9",name: "Master Bedroom 4", type: WidgetType.overhead, },
+       { id: "overhead10",name: "Office", type: WidgetType.overhead, },
+       { id: "overhead11",name: "Basement", type: WidgetType.overhead, },
+       { id: "info2", name:"Weather",type: WidgetType.weatherInfo },
+       { id: "info3", name:"Power Usage",type: WidgetType.powerInfo },
+       { id: "graph1", name:"Humidity",type: WidgetType.graph },
+       { id: "graph2", name:"Pressure",type: WidgetType.graph },
+       { id: "control1", name:"Music",type: WidgetType.music },
+       { id: "control2", name:"Front Camera",type: WidgetType.camera },
+       { id: "control3", name:"Alarm",type: WidgetType.alarm },
+       { id: "control4", name:"Heating / Air Conditioning",type: WidgetType.hvac },
+    ];
+
+    // Page rows follow component-details, so lookup is one model index with no ID search.
+    // Hidden geometry stays stable across pages and retains nonzero control dimensions.
+    property <ComponentData> hidden-panel: { width: 435, height: 314 };
+    property <ComponentData> landscape-top-1: { x: 36, y: 157, width: 435, height: 314, visible: true };
+    property <ComponentData> landscape-top-2: { x: 507, y: 157, width: 435, height: 314, visible: true };
+    property <ComponentData> landscape-top-3: { x: 978, y: 157, width: 435, height: 314, visible: true };
+    property <ComponentData> landscape-top-4: { x: 1449, y: 157, width: 435, height: 314, visible: true };
+    property <ComponentData> landscape-bottom-1: { x: 36, y: 507, width: 435, height: 471, visible: true };
+    property <ComponentData> landscape-bottom-2: { x: 507, y: 507, width: 435, height: 471, visible: true };
+    property <ComponentData> landscape-bottom-3: { x: 978, y: 507, width: 435, height: 471, visible: true };
+    property <ComponentData> landscape-bottom-4: { x: 1449, y: 507, width: 435, height: 471, visible: true };
+
+    property <[ComponentData]> landscape-layouts: [
+        // 0: house
+        hidden-panel, hidden-panel, hidden-panel,
+        landscape-top-1, // lamp4
+        landscape-top-2, // lamp5
+        landscape-top-3, // lamp6
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        landscape-bottom-4, // info2
+        hidden-panel, hidden-panel, hidden-panel,
+        landscape-top-4, // control1
+        landscape-bottom-1, // control2
+        landscape-bottom-2, // control3
+        landscape-bottom-3, // control4
+        // 1: kitchen
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel,
+        { x: 507, y: 157, width: 435, height: 471, visible: true }, // appliance1
+        { x: 36, y: 157, width: 435, height: 471, visible: true }, // appliance2
+        { x: 36, y: 664, width: 278, height: 314, visible: true }, // overhead1
+        { x: 350, y: 664, width: 278, height: 314, visible: true }, // overhead2
+        { x: 664, y: 664, width: 278, height: 314, visible: true }, // overhead3
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: 978, y: 664, width: 435, height: 314, visible: true }, // info2
+        hidden-panel,
+        { x: 978, y: 157, width: 435, height: 507, visible: true }, // graph1
+        hidden-panel,
+        { x: 1449, y: 157, width: 435, height: 821, visible: true }, // control1
+        hidden-panel, hidden-panel, hidden-panel,
+        // 2: bedroom1
+        { x: 36, y: 543, width: 435, height: 435, visible: true }, // lamp1
+        { x: 978, y: 543, width: 435, height: 435, visible: true }, // lamp2
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        { x: 1136, y: 354, width: 278, height: 152, visible: true }, // overhead4
+        { x: 822, y: 354, width: 278, height: 152, visible: true }, // overhead5
+        { x: 507, y: 354, width: 278, height: 152, visible: true }, // overhead6
+        { x: 507, y: 157, width: 278, height: 152, visible: true }, // overhead7
+        { x: 1136, y: 157, width: 278, height: 152, visible: true }, // overhead8
+        { x: 822, y: 157, width: 275, height: 152, visible: true }, // overhead9
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        { x: 1449, y: 157, width: 435, height: 821, visible: true }, // control1
+        { x: 36, y: 157, width: 435, height: 350, visible: true }, // control2
+        hidden-panel, hidden-panel,
+        // 3: office
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        landscape-top-1, // lamp7
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        landscape-top-2, // overhead10
+        hidden-panel,
+        landscape-top-3, // info2
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: 1449, y: 157, width: 435, height: 821, visible: true }, // control1
+        landscape-bottom-1, // control2
+        landscape-bottom-2, // control3
+        landscape-bottom-3, // control4
+    ];
+
+    property <[ComponentData]> portrait-layouts: [
+        // 0: house
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: margin, y: row1-y, width: big-width, height: mini-height, visible: true }, // lamp4
+        { x: big-col2-x, y: row1-y, width: big-width, height: mini-height, visible: true }, // lamp5
+        { x: margin, y: row2-y, width: big-width, height: mini-height, visible: true }, // lamp6
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        { x: big-col2-x, y: row4-y, width: big-width, height: big-height, visible: true }, // info2
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: big-col2-x, y: row2-y, width: big-width, height: mini-height, visible: true }, // control1
+        { x: margin, y: row3-y, width: big-width, height: big-height, visible: true }, // control2
+        { x: big-col2-x, y: row3-y, width: big-width, height: big-height, visible: true }, // control3
+        { x: margin, y: row4-y, width: big-width, height: big-height, visible: true }, // control4
+        // 1: kitchen
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel,
+        { x: margin, y: row1-y, width: big-width, height: mega-height, visible: true }, // appliance1
+        { x: big-col2-x, y: row1-y, width: big-width, height: mega-height, visible: true }, // appliance2
+        { x: margin, y: row2-y2, width: big-width, height: mini-height, visible: true }, // overhead1
+        { x: big-col2-x, y: row2-y2, width: big-width, height: mini-height, visible: true }, // overhead2
+        { x: margin, y: row3-y2, width: big-width, height: mini-height, visible: true }, // overhead3
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: margin, y: row4-y2, width: big-width, height: mini-height, visible: true }, // info2
+        hidden-panel, hidden-panel, hidden-panel,
+        { x: big-col2-x, y: row3-y2, width: big-width, height: (mini-height * 2) + margin, visible: true }, // control1
+        hidden-panel, hidden-panel, hidden-panel,
+        // 2: bedroom1
+        { x: margin, y: row4-y3, width: big-width, height: big-height, visible: true }, // lamp1
+        { x: big-col2-x, y: row4-y3, width: big-width, height: big-height, visible: true }, // lamp2
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        { x: margin, y: row2-y3, width: mini-width, height: mini-height, visible: true }, // overhead4
+        { x: mini-col2-x, y: row2-y3, width: mini-width, height: mini-height, visible: true }, // overhead5
+        { x: mini-col3-x, y: row2-y3, width: mini-width, height: mini-height, visible: true }, // overhead6
+        { x: margin, y: row3-y3, width: mini-width, height: mini-height, visible: true }, // overhead7
+        { x: mini-col2-x, y: row3-y3, width: mini-width, height: mini-height, visible: true }, // overhead8
+        { x: mini-col3-x, y: row3-y3, width: mini-width, height: mini-height, visible: true }, // overhead9
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        { x: big-col2-x, y: row1-y, width: big-width, height: big-height, visible: true }, // control1
+        { x: margin, y: row1-y, width: big-width, height: big-height, visible: true }, // control2
+        hidden-panel, hidden-panel,
+        // 3: office
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        { x: margin, y: row1-y, width: big-width, height: mini-height, visible: true }, // lamp7
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel, hidden-panel, hidden-panel, hidden-panel, hidden-panel,
+        hidden-panel,
+        { x: big-col2-x, y: row1-y, width: big-width, height: mini-height, visible: true }, // overhead10
+        hidden-panel,
+        { x: big-col2-x, y: row2-y, width: big-width, height: mini-height, visible: true }, // info2
+        { x: margin, y: row2-y, width: big-width, height: mini-height, visible: true }, // info3
+        hidden-panel, hidden-panel,
+        { x: big-col2-x, y: row4-y, width: big-width, height: big-height, visible: true }, // control1
+        { x: margin, y: row3-y, width: big-width, height: big-height, visible: true }, // control2
+        { x: big-col2-x, y: row3-y, width: big-width, height: big-height, visible: true }, // control3
+        { x: margin, y: row4-y, width: big-width, height: big-height, visible: true }, // control4
+    ];
+}
