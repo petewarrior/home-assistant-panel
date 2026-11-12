@@ -1,7 +1,6 @@
+# Home Assistant Panel
 
-### `Home Automation Demo`
-
-A fictional Home Automation User Interface.
+A control panel for [Home Assistant](http://github.com/home-assistant) based on the [Slint Home Automation Demo](https://github.com/slint-ui/slint/tree/master/demos/home-automation). Built with Rust.
 
 | `.slint` Design | Rust Source | C++ Source | Node Source | Online wasm Preview | Open in SlintPad |
 | --- | --- | --- | --- | --- | --- |
@@ -16,10 +15,15 @@ Use the base URL, such as `http://homeassistant.local:8123`, and a Home Assistan
 Keep `rust/.env` out of version control.
 
 Home Assistant areas appear as pages in the existing room navigation.
-Devices without an assigned area appear on the Unassigned page.
+The Home page shows the Home Assistant daily weather forecast followed by separate Devices, Scenes, Timers, and Other sections.
+Scenes can be activated, and timers can be started, paused, or canceled from their cards.
+Room pages use the same sections; entities without an assigned area appear on the Unassigned page.
 The pages use the demo's Lamp component for lights.
 Tap a lamp image to toggle it, or use its slider to change brightness.
 Tap a supported entity to request an on/off state change.
+The forecast refreshes when its weather entity changes and every 30 minutes.
+By default, the app uses the first weather entity by entity ID; set `HA_WEATHER_ENTITY` in `rust/.env` to select another.
+The forecast uses the temperature unit configured on that entity.
 Browser builds don't connect to Home Assistant.
 
 ## Building and running on iOS

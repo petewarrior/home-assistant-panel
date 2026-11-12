@@ -1,7 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-use crate::state::{HaEntity, SharedState, StateChange};
+use crate::state::{HaEntity, HomeAssistantAction, SharedState, StateChange, WeatherForecast};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -47,7 +47,7 @@ async fn wait_result(ws: &mut HaWebSocket, id: u64) -> Result<Value, Error> {
     }
 }
 
-fn load_config() -> Result<(String, String), Error> {
+fn load_config() -> Result<(String, String, Option<String>), Error> {
     let env_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
     let contents = match std::fs::read_to_string(&env_path) {
         Ok(contents) => contents,
@@ -87,7 +87,13 @@ fn load_config() -> Result<(String, String), Error> {
         return Err("HA_BASE_URL must use http:// or https://".into());
     };
 
-    Ok((format!("{}/api/websocket", websocket_base.trim_end_matches('/')), token))
+    let weather_entity = std::env::var("HA_WEATHER_ENTITY")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| file_values.get("HA_WEATHER_ENTITY").cloned())
+        .filter(|value| !value.trim().is_empty());
+
+    Ok((format!("{}/api/websocket", websocket_base.trim_end_matches('/')), token, weather_entity))
 }
 
 fn device_entities(
@@ -140,9 +146,9 @@ fn device_entities(
                 return None;
             }
             let entity_id = entity["entity_id"].as_str()?;
-            let device_id = entity["device_id"].as_str()?;
             let current = states_by_id.get(entity_id)?;
             let domain = entity_id.split_once('.')?.0;
+            let device_id = entity["device_id"].as_str();
             let attributes = &current["attributes"];
             let dimmable = if let Some(color_modes) = attributes["supported_color_modes"].as_array()
             {
@@ -153,14 +159,22 @@ fn device_entities(
                 attributes["brightness"].as_u64().is_some()
             };
             let area_id = entity["area_id"].as_str().or_else(|| {
-                devices_by_id.get(device_id).and_then(|device| device["area_id"].as_str())
+                device_id
+                    .and_then(|device_id| devices_by_id.get(device_id))
+                    .and_then(|device| device["area_id"].as_str())
             });
             Some(HaEntity {
                 entity_id: entity_id.to_owned(),
-                device_name: device_names
-                    .get(device_id)
+                device_name: device_id
+                    .and_then(|device_id| device_names.get(device_id))
                     .cloned()
-                    .unwrap_or_else(|| device_id.to_owned()),
+                    .unwrap_or_else(|| {
+                        entity["name"]
+                            .as_str()
+                            .or_else(|| attributes["friendly_name"].as_str())
+                            .unwrap_or(entity_id)
+                            .to_owned()
+                    }),
                 area_name: area_id
                     .and_then(|area_id| area_names.get(area_id))
                     .cloned()
@@ -199,7 +213,7 @@ fn state_from_event(message: &Value) -> Option<(String, String, Option<u8>)> {
 async fn request_initial_state(
     ws: &mut HaWebSocket,
     request_counter: &mut u64,
-) -> Result<Vec<HaEntity>, Error> {
+) -> Result<(Vec<HaEntity>, Value), Error> {
     let id = next_request_id(request_counter)?;
     send_json(ws, json!({"id": id, "type": "config/device_registry/list"})).await?;
     let devices = wait_result(ws, id).await?;
@@ -216,33 +230,188 @@ async fn request_initial_state(
     send_json(ws, json!({"id": id, "type": "get_states"})).await?;
     let states = wait_result(ws, id).await?;
 
-    Ok(device_entities(&devices, &registry, &areas, &states))
+    Ok((device_entities(&devices, &registry, &areas, &states), states))
 }
 
-fn service_for(change: &StateChange) -> Result<(&str, &str), Error> {
-    let (domain, _) = change
-        .entity_id
+fn select_weather_entity(
+    entities: &[HaEntity],
+    configured: Option<&str>,
+) -> Result<Option<String>, Error> {
+    let weather_entities = entities
+        .iter()
+        .filter(|entity| entity.domain == "weather")
+        .map(|entity| entity.entity_id.clone())
+        .collect::<Vec<_>>();
+
+    if let Some(entity_id) = configured {
+        if !entity_id.starts_with("weather.") || !weather_entities.iter().any(|id| id == entity_id)
+        {
+            return Err(format!(
+                "HA_WEATHER_ENTITY '{entity_id}' is not an available Home Assistant weather entity"
+            )
+            .into());
+        }
+        return Ok(Some(entity_id.to_owned()));
+    }
+
+    let mut weather_entities = weather_entities;
+    weather_entities.sort();
+    Ok(weather_entities.into_iter().next())
+}
+
+fn weather_temperature_unit(states: &Value, entity_id: &str) -> String {
+    states
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|entity| entity["entity_id"] == entity_id)
+        .and_then(|entity| entity["attributes"]["temperature_unit"].as_str())
+        .unwrap_or("°C")
+        .to_owned()
+}
+
+fn forecast_day(datetime: &str, index: usize) -> String {
+    chrono::DateTime::parse_from_rfc3339(datetime)
+        .map(|date| date.format("%a").to_string())
+        .or_else(|_| {
+            chrono::NaiveDate::parse_from_str(datetime.get(..10).unwrap_or_default(), "%Y-%m-%d")
+                .map(|date| date.format("%a").to_string())
+        })
+        .unwrap_or_else(|_| if index == 0 { "Today".to_owned() } else { "—".to_owned() })
+}
+
+fn parse_weather_forecast(result: &Value, entity_id: &str) -> Result<Vec<WeatherForecast>, Error> {
+    let forecast = result["response"][entity_id]["forecast"]
+        .as_array()
+        .ok_or_else(|| format!("Home Assistant returned no forecast for {entity_id}"))?;
+
+    let mut forecast = forecast
+        .iter()
+        .take(5)
+        .enumerate()
+        .map(|(index, item)| {
+            let temperature = item["temperature"]
+                .as_f64()
+                .map(|temperature| format!("{:.0}", temperature.round()))
+                .unwrap_or_else(|| "—".to_owned());
+            WeatherForecast {
+                condition: item["condition"].as_str().unwrap_or("cloudy").to_owned(),
+                day: item["datetime"]
+                    .as_str()
+                    .map(|datetime| forecast_day(datetime, index))
+                    .unwrap_or_else(
+                        || if index == 0 { "Today".to_owned() } else { "—".to_owned() },
+                    ),
+                temperature,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    while forecast.len() < 5 {
+        forecast.push(WeatherForecast::default());
+    }
+    Ok(forecast)
+}
+
+async fn request_weather_forecast(
+    ws: &mut HaWebSocket,
+    request_counter: &mut u64,
+    entity_id: &str,
+    temperature_unit: &str,
+) -> Result<(Vec<WeatherForecast>, String), Error> {
+    let id = next_request_id(request_counter)?;
+    send_json(
+        ws,
+        json!({
+            "id": id,
+            "type": "call_service",
+            "domain": "weather",
+            "service": "get_forecasts",
+            "service_data": {"type": "daily"},
+            "target": {"entity_id": entity_id},
+            "return_response": true,
+        }),
+    )
+    .await?;
+    let result = wait_result(ws, id).await?;
+    let forecast = parse_weather_forecast(&result, entity_id)?;
+    Ok((forecast, temperature_unit.to_owned()))
+}
+
+async fn refresh_weather_forecast(
+    ws: &mut HaWebSocket,
+    request_counter: &mut u64,
+    state: &SharedState,
+    entity_id: &str,
+    temperature_unit: &str,
+) {
+    match request_weather_forecast(ws, request_counter, entity_id, temperature_unit).await {
+        Ok((forecast, temperature_unit)) => {
+            state.set_weather_forecast(forecast, temperature_unit);
+        }
+        Err(error) => {
+            let message = format!("Could not load weather forecast: {error}");
+            eprintln!("{message}");
+            state.set_weather_status(message);
+        }
+    }
+}
+
+fn service_for(action: &HomeAssistantAction) -> Result<(&str, &str), Error> {
+    let (entity_id, expected_domain) = match action {
+        HomeAssistantAction::StateChange(change) => (&change.entity_id, None),
+        HomeAssistantAction::ActivateScene(entity_id) => (entity_id, Some("scene")),
+        HomeAssistantAction::TimerAction { entity_id, .. } => (entity_id, Some("timer")),
+    };
+    let (domain, object_id) = entity_id
         .split_once('.')
-        .ok_or_else(|| format!("Invalid entity ID: {}", change.entity_id))?;
-    if change.brightness.is_some() && domain != "light" {
-        return Err(format!("Brightness changes are not supported for {domain} entities").into());
+        .filter(|(domain, object_id)| !domain.is_empty() && !object_id.is_empty())
+        .ok_or_else(|| format!("Invalid entity ID: {entity_id}"))?;
+
+    match action {
+        HomeAssistantAction::StateChange(change) => {
+            if change.brightness.is_some() && domain != "light" {
+                return Err(
+                    format!("Brightness changes are not supported for {domain} entities").into()
+                );
+            }
+            if change.brightness.is_none() && change.state != "on" && change.state != "off" {
+                return Err(format!("Unsupported requested state: {}", change.state).into());
+            }
+            if !matches!(domain, "light" | "switch" | "input_boolean" | "fan" | "media_player") {
+                return Err(format!("State changes are not supported for {domain} entities").into());
+            }
+            Ok((
+                domain,
+                if change.brightness.is_some() || change.state == "on" {
+                    "turn_on"
+                } else {
+                    "turn_off"
+                },
+            ))
+        }
+        HomeAssistantAction::ActivateScene(_) if expected_domain == Some(domain) => {
+            Ok((domain, "turn_on"))
+        }
+        HomeAssistantAction::TimerAction { action, .. } if expected_domain == Some(domain) => {
+            match action.as_str() {
+                "start" | "pause" | "cancel" => Ok((domain, action)),
+                _ => Err(format!("Unsupported timer action: {action}").into()),
+            }
+        }
+        HomeAssistantAction::ActivateScene(_) => {
+            Err(format!("Scene activation is not supported for {domain}.{object_id}").into())
+        }
+        HomeAssistantAction::TimerAction { .. } => {
+            Err(format!("Timer actions are not supported for {domain}.{object_id}").into())
+        }
     }
-    if change.brightness.is_none() && change.state != "on" && change.state != "off" {
-        return Err(format!("Unsupported requested state: {}", change.state).into());
-    }
-    if !matches!(domain, "light" | "switch" | "input_boolean" | "fan" | "media_player") {
-        return Err(format!("State changes are not supported for {domain} entities").into());
-    }
-    Ok((
-        domain,
-        if change.brightness.is_some() || change.state == "on" { "turn_on" } else { "turn_off" },
-    ))
 }
 
 pub async fn run(state: SharedState) -> Result<(), Error> {
     let mut request_counter = 1u64;
     state.set_status("Loading Home Assistant configuration...");
-    let (url, token) = load_config()?;
+    let (url, token, configured_weather_entity) = load_config()?;
     state.set_status("Connecting to Home Assistant...");
     let (mut ws, _) = connect_async(url).await?;
 
@@ -258,8 +427,28 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
     }
 
     state.set_status("Loading devices...");
-    let entities = request_initial_state(&mut ws, &mut request_counter).await?;
+    let (entities, states) = request_initial_state(&mut ws, &mut request_counter).await?;
+    let weather_entity =
+        match select_weather_entity(&entities, configured_weather_entity.as_deref()) {
+            Ok(weather_entity) => weather_entity,
+            Err(error) => {
+                let message = error.to_string();
+                eprintln!("{message}");
+                state.set_weather_status(message);
+                None
+            }
+        };
     state.set_entities(entities);
+    let weather_unit = weather_entity
+        .as_deref()
+        .map(|entity_id| weather_temperature_unit(&states, entity_id))
+        .unwrap_or_else(|| "°C".to_owned());
+    if let Some(entity_id) = &weather_entity {
+        refresh_weather_forecast(&mut ws, &mut request_counter, &state, entity_id, &weather_unit)
+            .await;
+    } else if state.snapshot().weather_status == "Waiting for Home Assistant weather..." {
+        state.set_weather_status("No Home Assistant weather entity found");
+    }
 
     let subscription_id = next_request_id(&mut request_counter)?;
     send_json(
@@ -272,6 +461,10 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
 
     let mut pending_results = HashSet::new();
     let mut command_timer = tokio::time::interval(std::time::Duration::from_millis(100));
+    let mut weather_timer = tokio::time::interval_at(
+        tokio::time::Instant::now() + std::time::Duration::from_secs(30 * 60),
+        std::time::Duration::from_secs(30 * 60),
+    );
 
     loop {
         tokio::select! {
@@ -288,12 +481,22 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
                 if message["type"] == "event" && message["id"] == subscription_id {
                     if let Some((entity_id, value, brightness)) = state_from_event(&message) {
                         state.update_entity_state(&entity_id, &value, brightness);
+                        if weather_entity.as_deref() == Some(entity_id.as_str()) {
+                            refresh_weather_forecast(
+                                &mut ws,
+                                &mut request_counter,
+                                &state,
+                                &entity_id,
+                                &weather_unit,
+                            )
+                            .await;
+                        }
                     }
                 } else if message["type"] == "result" {
                     match message["id"].as_u64() {
                         Some(id) if pending_results.remove(&id) => {
                             if message["success"] != true {
-                                let error = format!("State change failed: {}", message["error"]);
+                                let error = format!("Home Assistant action failed: {}", message["error"]);
                                 eprintln!("Home Assistant {error}");
                                 state.set_status(format!("Connected; {error}"));
                             } else {
@@ -304,19 +507,36 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
                     }
                 }
             }
+            _ = weather_timer.tick(), if weather_entity.is_some() => {
+                if let Some(entity_id) = &weather_entity {
+                    refresh_weather_forecast(
+                        &mut ws,
+                        &mut request_counter,
+                        &state,
+                        entity_id,
+                        &weather_unit,
+                    )
+                    .await;
+                }
+            }
             _ = command_timer.tick() => {
                 for change in state.take_pending_changes() {
                     let (domain, service) = match service_for(&change) {
                         Ok(service) => service,
                         Err(error) => {
-                            eprintln!("Could not send Home Assistant state change: {error}");
-                            state.set_status(format!("Connected; state change failed: {error}"));
+                            eprintln!("Could not send Home Assistant action: {error}");
+                            state.set_status(format!("Connected; action failed: {error}"));
                             continue;
                         }
                     };
                     let id = next_request_id(&mut request_counter)?;
-                    let mut service_data = json!({"entity_id": change.entity_id});
-                    if let Some(brightness) = change.brightness {
+                    let entity_id = match &change {
+                        HomeAssistantAction::StateChange(change) => &change.entity_id,
+                        HomeAssistantAction::ActivateScene(entity_id)
+                        | HomeAssistantAction::TimerAction { entity_id, .. } => entity_id,
+                    };
+                    let mut service_data = json!({"entity_id": entity_id});
+                    if let HomeAssistantAction::StateChange(StateChange { brightness: Some(brightness), .. }) = &change {
                         service_data["brightness"] = json!(brightness);
                     }
                     send_json(&mut ws, json!({
@@ -335,8 +555,11 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{device_entities, next_request_id, service_for, state_from_event};
-    use crate::state::StateChange;
+    use super::{
+        device_entities, next_request_id, parse_weather_forecast, select_weather_entity,
+        service_for, state_from_event, weather_temperature_unit,
+    };
+    use crate::state::{HaEntity, HomeAssistantAction, StateChange};
     use serde_json::json;
 
     #[test]
@@ -475,35 +698,139 @@ mod tests {
     }
 
     #[test]
+    fn entities_without_a_device_are_included() {
+        let registry = json!([{
+            "entity_id": "scene.evening",
+            "name": "Evening",
+            "disabled_by": null
+        }]);
+        let states = json!([{"entity_id": "scene.evening", "state": "scening"}]);
+
+        let entities = device_entities(&json!([]), &registry, &json!([]), &states);
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].area_name, "Unassigned");
+        assert_eq!(entities[0].name, "Evening");
+        assert_eq!(entities[0].domain, "scene");
+    }
+
+    #[test]
     fn state_change_requests_map_to_home_assistant_services() {
-        let change = StateChange {
+        let change = HomeAssistantAction::StateChange(StateChange {
             entity_id: "light.ceiling".into(),
             state: "off".into(),
             brightness: None,
-        };
+        });
 
         assert_eq!(service_for(&change).unwrap(), ("light", "turn_off"));
     }
 
     #[test]
     fn brightness_requests_use_the_light_turn_on_service() {
-        let change = StateChange {
+        let change = HomeAssistantAction::StateChange(StateChange {
             entity_id: "light.ceiling".into(),
             state: "on".into(),
             brightness: Some(128),
-        };
+        });
 
         assert_eq!(service_for(&change).unwrap(), ("light", "turn_on"));
     }
 
     #[test]
     fn state_change_requests_reject_unsupported_domains() {
-        let change = StateChange {
+        let change = HomeAssistantAction::StateChange(StateChange {
             entity_id: "sensor.temperature".into(),
             state: "on".into(),
             brightness: None,
-        };
+        });
 
         assert!(service_for(&change).is_err());
+    }
+
+    #[test]
+    fn scene_activation_uses_the_scene_turn_on_service() {
+        let action = HomeAssistantAction::ActivateScene("scene.evening".into());
+
+        assert_eq!(service_for(&action).unwrap(), ("scene", "turn_on"));
+    }
+
+    #[test]
+    fn timer_actions_use_only_supported_timer_services() {
+        for action in ["start", "pause", "cancel"] {
+            let request = HomeAssistantAction::TimerAction {
+                entity_id: "timer.cooking".into(),
+                action: action.into(),
+            };
+            assert_eq!(service_for(&request).unwrap(), ("timer", action));
+        }
+
+        let invalid = HomeAssistantAction::TimerAction {
+            entity_id: "timer.cooking".into(),
+            action: "finish".into(),
+        };
+        assert!(service_for(&invalid).is_err());
+    }
+
+    #[test]
+    fn weather_forecasts_are_parsed_and_padded_to_five_days() {
+        let response = json!({
+            "response": {
+                "weather.home": {
+                    "forecast": [
+                        {
+                            "datetime": "2026-11-12T12:00:00+07:00",
+                            "condition": "partlycloudy",
+                            "temperature": 24.5
+                        }
+                    ]
+                }
+            }
+        });
+
+        let forecast = parse_weather_forecast(&response, "weather.home").unwrap();
+
+        assert_eq!(forecast.len(), 5);
+        assert_eq!(forecast[0].day, "Thu");
+        assert_eq!(forecast[0].condition, "partlycloudy");
+        assert_eq!(forecast[0].temperature, "25");
+        assert!(forecast[1].day.is_empty());
+    }
+
+    #[test]
+    fn weather_forecast_rejects_missing_entity_response() {
+        let response = json!({"response": {}});
+
+        assert!(parse_weather_forecast(&response, "weather.home").is_err());
+    }
+
+    #[test]
+    fn weather_entity_can_be_configured_or_discovered() {
+        let entities = vec![
+            HaEntity {
+                entity_id: "weather.z_home".into(),
+                domain: "weather".into(),
+                ..HaEntity::default()
+            },
+            HaEntity {
+                entity_id: "weather.a_home".into(),
+                domain: "weather".into(),
+                ..HaEntity::default()
+            },
+        ];
+        let states = json!([
+            {"entity_id": "weather.z_home", "attributes": {"temperature_unit": "°F"}},
+            {"entity_id": "weather.a_home", "attributes": {"temperature_unit": "°C"}},
+        ]);
+
+        assert_eq!(
+            select_weather_entity(&entities, None).unwrap().as_deref(),
+            Some("weather.a_home")
+        );
+        assert_eq!(
+            select_weather_entity(&entities, Some("weather.z_home")).unwrap().as_deref(),
+            Some("weather.z_home")
+        );
+        assert!(select_weather_entity(&entities, Some("sensor.outdoor")).is_err());
+        assert_eq!(weather_temperature_unit(&states, "weather.z_home"), "°F");
     }
 }

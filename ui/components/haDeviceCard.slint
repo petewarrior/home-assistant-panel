@@ -7,12 +7,15 @@ import { HaText } from "general/haText.slint";
 
 export component HaDeviceCard inherits Rectangle {
     in property <string> entity-id;
+    in property <string> entity-domain;
     in property <string> device-name;
     in property <string> area-name;
     in property <string> name;
     in property <string> state;
     in property <bool> toggleable;
     callback state-change(string, string);
+    callback scene-activate(string);
+    callback timer-action(string, string);
 
     width: 100%;
     height: 120px;
@@ -71,18 +74,56 @@ export component HaDeviceCard inherits Rectangle {
             }
 
             HaText {
-                text: root.toggleable ? "Tap to toggle" : root.entity-id;
+                text: root.entity-domain == "scene"
+                    ? "Tap to activate"
+                    : (root.toggleable ? "Tap to toggle" : root.entity-id);
                 color: Palette.control-alternate-foreground;
                 font-size: 10px;
                 overflow: elide;
             }
         }
+
+        if root.entity-domain == "timer": HorizontalLayout {
+            spacing: 6px;
+
+            for action[index] in ["start", "pause", "cancel"]: Rectangle {
+                property <bool> available: action == "start"
+                    ? root.state == "idle" || root.state == "paused"
+                    : (action == "pause" ? root.state == "active" : root.state == "active" || root.state == "paused");
+                width: available ? 56px : 0px;
+                height: available ? 22px : 0px;
+                border-radius: 11px;
+                background: Palette.control-alternate-background;
+                visible: available;
+
+                HaText {
+                    width: parent.width;
+                    height: parent.height;
+                    text: action;
+                    color: Palette.control-foreground;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    enabled: available;
+                    clicked => {
+                        root.timer-action(root.entity-id, action);
+                    }
+                }
+            }
+        }
     }
 
     TouchArea {
-        enabled: root.toggleable;
+        enabled: root.toggleable || root.entity-domain == "scene";
         clicked => {
-            root.state-change(root.entity-id, root.state == "on" ? "off" : "on");
+            if root.entity-domain == "scene" {
+                root.scene-activate(root.entity-id);
+            } else {
+                root.state-change(root.entity-id, root.state == "on" ? "off" : "on");
+            }
         }
     }
 }

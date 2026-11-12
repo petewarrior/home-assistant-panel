@@ -1,0 +1,69 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "../../common.slint";
+import { HaEntity } from "../../appState.slint";
+import { HaText } from "../general/haText.slint";
+import { HaDeviceCard } from "../haDeviceCard.slint";
+import { Api } from "../../api.slint";
+
+export component HaEntitySection inherits Rectangle {
+    in property <string> title;
+    in property <[HaEntity]> entities;
+    property <int> grid-columns: root.width < 520px ? 1 : (root.width < 760px ? 2 : 3);
+    property <length> card-width: (root.width - 24px - (root.grid-columns - 1) * 12px) / root.grid-columns;
+    property <length> card-height: root.card-width * 0.75;
+    property <int> row-count: (root.entities.length + root.grid-columns - 1) / root.grid-columns;
+
+    width: 100%;
+    height: 34px + (root.entities.length > 0 ? root.row-count * (root.card-height + 12px) : 32px);
+
+    VerticalLayout {
+        spacing: 8px;
+
+        HaText {
+            text: root.title;
+            color: Palette.info-foreground;
+            font-size: 18px;
+            font-weight: FontWeight.semi-bold;
+        }
+
+        if root.entities.length == 0: HaText {
+            text: "No items available";
+            color: Palette.foreground;
+            font-size: 13px;
+        }
+
+        if root.entities.length > 0: GridLayout {
+            spacing: 12px;
+
+            for entity[index] in root.entities: Rectangle {
+                row: index / root.grid-columns;
+                col: Math.mod(index, root.grid-columns);
+                width: root.card-width;
+                height: root.card-height;
+
+                HaDeviceCard {
+                    width: 100%;
+                    height: 100%;
+                    entity-id: entity.entity-id;
+                    entity-domain: entity.domain;
+                    device-name: entity.device-name;
+                    area-name: entity.area-name;
+                    name: entity.name;
+                    state: entity.state;
+                    toggleable: entity.toggleable;
+                    state-change(entity-id, state) => {
+                        Api.request-ha-state-change(entity-id, state);
+                    }
+                    scene-activate(entity-id) => {
+                        Api.request-ha-scene-activation(entity-id);
+                    }
+                    timer-action(entity-id, action) => {
+                        Api.request-ha-timer-action(entity-id, action);
+                    }
+                }
+            }
+        }
+    }
+}

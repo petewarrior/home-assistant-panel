@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 import { MainScreen } from "components/mainView/mainScreen.slint";
 import { Api } from "api.slint";
+import { Measurements } from "common.slint";
 
 export { Api }
 
 export component AppWindow inherits Window {
-    min-width: 960px;
-    min-height: 540px;
-    preferred-width: 960px;
-    preferred-height: 540px;
+    min-width: 320px;
+    min-height: 240px;
+    preferred-width: Measurements.application-width;
+    preferred-height: Measurements.application-height;
 
     MainScreen {
         x: root.safe-area-insets.left;

@@ -9,9 +9,11 @@ export component Day inherits Rectangle {
     in property <float> content-scale: 1;
     property <length> default-width: 50px * root.content-scale;
     in property <length> special-height;
+    in property <string> temperature-unit;
     width: default-width;
     in property <WeatherData> weather-data;
     in property <brush> tint: #2e1248;
+    visible: weather-data.available;
 
     Rectangle {
         width: default-width;
@@ -73,7 +75,7 @@ export component Day inherits Rectangle {
             }
 
             Text {
-                text: "°C";
+                text: root.temperature-unit;
                 color: white;
                 font-size: 8px * root.content-scale;
                 vertical-alignment: center;
@@ -92,7 +94,17 @@ export component WeatherInfo {
     property <float> content-scale: Math.min(1, root.width / root.natural-width);
     property <length> special-height: Math.min(180px, root.height) * root.content-scale;
 
-    Rectangle {
+    if Api.weather-forecast.length == 0: HaText {
+        width: root.width;
+        height: root.height;
+        text: Api.weather-status;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: Palette.foreground;
+        font-size: Style.H4-font-size;
+    }
+
+    if Api.weather-forecast.length > 0: Rectangle {
         y: (root.height - self.height) / 2;
         width: root.natural-width * root.content-scale;
         height: root.special-height;
@@ -107,6 +119,7 @@ export component WeatherInfo {
                 tint: [#391659, #31134C, #29103F, #210D34, #180925][i];
                 special-height: root.special-height;
                 content-scale: root.content-scale;
+                temperature-unit: Api.weather-temperature-unit;
             }
         }
     }

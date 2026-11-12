@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { Palette } from "../../common.slint";
-import { HaEntity } from "../../appState.slint";
+import { HaEntityGroups } from "../../appState.slint";
 import { HaText } from "../general/haText.slint";
-import { HaDeviceCard } from "../haDeviceCard.slint";
-import { Lamp } from "../lamp.slint";
+import { HaEntitySection } from "./haEntitySection.slint";
+import { WeatherInfo } from "../weatherInfo.slint";
 import { Api } from "../../api.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export component HaDevicesPage inherits Rectangle {
     in property <string> room-name;
-    in property <[HaEntity]> entities;
-    property <int> grid-columns: 3;
+    in property <HaEntityGroups> entities;
+    in property <bool> show-weather: false;
 
     width: 100%;
     height: 100%;
@@ -35,64 +35,64 @@ export component HaDevicesPage inherits Rectangle {
             overflow: elide;
         }
 
-        if root.entities.length > 0: ScrollView {
+        ScrollView {
             width: 100%;
             height: root.height - 70px;
             content-width: self.visible-width;
-            content-height: device-grid.preferred-height;
+            content-height: page-content.preferred-height;
             horizontal-scrollbar-policy: always-off;
 
-            device-grid := GridLayout {
-                spacing: 12px;
+            page-content := VerticalLayout {
+                width: root.width - 24px;
+                spacing: 16px;
 
-                for entity[index] in root.entities: Rectangle {
-                    row: index / root.grid-columns;
-                    col: Math.mod(index, root.grid-columns);
-                    width: (root.width - 48px) / root.grid-columns;
-                    height: self.width * 0.75;
+                if root.show-weather: Rectangle {
+                    width: root.width - 24px;
+                    height: 222px;
 
-                    if entity.domain == "light": Lamp {
-                        width: 100%;
-                        height: 100%;
-                        name: entity.name;
-                        id: entity.entity-id;
-                        home-assistant-controlled: true;
-                        home-assistant-on: entity.state == "on";
-                        home-assistant-dimmable: entity.dimmable;
-                        home-assistant-brightness: entity.brightness;
-                        home-assistant-toggle(is-on) => {
-                            Api.request-ha-state-change(entity.entity-id, is-on ? "on" : "off");
+                    VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        spacing: 6px;
+
+                        HaText {
+                            text: "Weather";
+                            color: Palette.info-foreground;
+                            font-size: 18px;
+                            font-weight: FontWeight.semi-bold;
                         }
-                        home-assistant-brightness-change(brightness) => {
-                            if brightness < 0.5 {
-                                Api.request-ha-state-change(entity.entity-id, "off");
-                            } else {
-                                Api.request-ha-brightness-change(entity.entity-id, brightness);
-                            }
-                        }
-                    }
 
-                    if entity.domain != "light": HaDeviceCard {
-                        width: 100%;
-                        height: 100%;
-                        entity-id: entity.entity-id;
-                        device-name: entity.device-name;
-                        area-name: entity.area-name;
-                        name: entity.name;
-                        state: entity.state;
-                        toggleable: entity.toggleable;
-                        state-change(entity-id, state) => {
-                            Api.request-ha-state-change(entity-id, state);
+                        WeatherInfo {
+                            x: (parent.width - self.width) / 2;
+                            width: Math.min(parent.width, 280px);
+                            height: 180px;
+                            index: 0;
+                            name: "Weather";
+                            id: "weather";
                         }
                     }
                 }
-            }
-        }
 
-        if root.entities.length == 0: HaText {
-            text: "No devices in this room";
-            color: Palette.foreground;
-            font-size: 14px;
+                HaEntitySection {
+                    title: "Devices";
+                    entities: root.entities.devices;
+                }
+
+                HaEntitySection {
+                    title: "Scenes";
+                    entities: root.entities.scenes;
+                }
+
+                HaEntitySection {
+                    title: "Timers";
+                    entities: root.entities.timers;
+                }
+
+                HaEntitySection {
+                    title: "Other";
+                    entities: root.entities.other;
+                }
+            }
         }
     }
 }

@@ -40,6 +40,10 @@ export component PageButton inherits Rectangle {
             Text {
                 x: -1px;
                 y: -1px;
+                width: parent.width;
+                height: parent.height;
+                horizontal-alignment: center;
+                vertical-alignment: center;
                 text: t.text;
                 font-size: default-font-size;
                 font-weight: FontWeight.normal;
@@ -316,7 +320,9 @@ export component MainScreen inherits Rectangle {
                 property <length> portrait-x: 110px;
                 x: AppState.orientation == Orientation.landscape ? (parent.width - self.width) / 2 : portrait-x;
                 y: AppState.graphics-accelerator-available ? 26px : 35px;
-                width: AppState.orientation == Orientation.landscape ? 600px : root.width - portrait-x;
+                width: AppState.orientation == Orientation.landscape
+                    ? Math.min(600px, root.width - 40px)
+                    : root.width - portrait-x;
                 height: 40px;
 
                 if !AppState.graphics-accelerator-available: Image {
@@ -406,6 +412,16 @@ export component MainScreen inherits Rectangle {
             y: 20px;
             width: root.width;
             height: root.height;
+            if AppState.current-page == 0: HaDevicesPage {
+                x: 36px;
+                y: 90px;
+                width: parent.width - 72px;
+                height: parent.height - 120px;
+                room-name: "Home";
+                entities: Api.ha-entity-groups;
+                show-weather: true;
+            }
+
             if AppState.current-page >= 3
                 && AppState.current-page < 3 + Api.ha-rooms.length: HaDevicesPage {
                 x: 36px;
@@ -423,10 +439,10 @@ export component MainScreen inherits Rectangle {
                 width: parent.width - 72px;
                 height: parent.height - 120px;
                 room-name: "Unassigned";
-                entities: Api.ha-unassigned-entities;
+                entities: Api.ha-unassigned-entity-groups;
             }
 
-            if AppState.current-page < 3 && AppState.graphics-accelerator-available: Rectangle {
+            if AppState.current-page > 0 && AppState.current-page < 3 && AppState.graphics-accelerator-available: Rectangle {
                 Backdrop {
                     y: -fs-holder.y;
                 }
@@ -441,7 +457,7 @@ export component MainScreen inherits Rectangle {
                 }
             }
 
-            if AppState.current-page < 3 && !AppState.graphics-accelerator-available: Rectangle {
+            if AppState.current-page > 0 && AppState.current-page < 3 && !AppState.graphics-accelerator-available: Rectangle {
                 Backdrop {
                     y: -fs-holder.y;
                 }
@@ -477,14 +493,14 @@ export component MainScreen inherits Rectangle {
         }
     }
 
-    Timer {
-        interval: 30s;
-        running: !AppState.kiosk-mode && !door-component-loaded && !AppState.disable-kiosk-mode;
-        triggered => {
-            AppState.first-run = false;
-            AppState.kiosk-mode = true;
-        }
-    }
+    // Timer {
+    //     interval: 30s;
+    //     running: !AppState.kiosk-mode && !door-component-loaded && !AppState.disable-kiosk-mode;
+    //     triggered => {
+    //         AppState.first-run = false;
+    //         AppState.kiosk-mode = true;
+    //     }
+    // }
 
     kiosk-mode-animator := Timer {
         running: AppState.kiosk-mode && !door-component-loaded;

@@ -1,7 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-import { AppState, HaEntity, HaRoom, Orientation } from "appState.slint";
+import { AppState, HaEntity, HaEntityGroups, HaRoom, Orientation } from "appState.slint";
 import { Date, Time } from "std-widgets.slint";
 
 export enum WeatherCondition {
@@ -14,16 +14,24 @@ export enum WeatherCondition {
 export struct WeatherData {
     condition: WeatherCondition,
     day: string,
-    temperature: float,
+    temperature: string,
+    available: bool,
 }
 
 export global Api {
     in-out property <[HaEntity]> ha-entities <=> AppState.ha-entities;
+    in-out property <HaEntityGroups> ha-entity-groups <=> AppState.ha-entity-groups;
     in-out property <[HaRoom]> ha-rooms <=> AppState.ha-rooms;
     in-out property <[HaEntity]> ha-unassigned-entities <=> AppState.ha-unassigned-entities;
+    in-out property <HaEntityGroups> ha-unassigned-entity-groups <=> AppState.ha-unassigned-entity-groups;
     in-out property <string> ha-status <=> AppState.ha-status;
     callback request-ha-state-change(string, string);
     callback request-ha-brightness-change(string, float);
+    callback request-ha-scene-activation(string);
+    callback request-ha-timer-action(string, string);
+    in-out property <[WeatherData]> weather-forecast: [];
+    in-out property <string> weather-status: "Waiting for Home Assistant weather...";
+    in-out property <string> weather-temperature-unit: "°C";
 
     in property <float> indoor-temperature: 22.0;
     in property <float> outdoor-temperature: 24.0;
@@ -75,31 +83,4 @@ export global Api {
         return "Unknown";
     }
 
-    in property <[WeatherData]> weather-forecast: [
-            {
-                condition: WeatherCondition.rainy,
-                day: "Mon",
-                temperature: 21.0,
-            },
-            {
-                condition: WeatherCondition.sunny-rainy,
-                day: "Tue",
-                temperature: 16.0,
-            },
-            {
-                condition: WeatherCondition.cloudy,
-                day: "Wed",
-                temperature: 18.0,
-            },
-            {
-                condition: WeatherCondition.sunny-cloudy,
-                day: "Thu",
-                temperature: 20.0,
-            },
-            {
-                condition: WeatherCondition.sunny,
-                day: "Fri",
-                temperature: 23.0,
-            },
-    ];
 }

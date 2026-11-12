@@ -35,8 +35,12 @@ pub fn main() -> Result<(), slint::PlatformError> {
     let app_weak = app.as_weak();
     let shared_state = state::SharedState::default();
     shared_state.set_status("Connecting to Home Assistant...");
+    shared_state.set_weather_status("Waiting for Home Assistant weather...");
     #[cfg(target_arch = "wasm32")]
-    shared_state.set_status("Home Assistant is unavailable in browser builds");
+    {
+        shared_state.set_status("Home Assistant is unavailable in browser builds");
+        shared_state.set_weather_status("Weather is unavailable in browser builds");
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -59,6 +63,7 @@ pub fn main() -> Result<(), slint::PlatformError> {
                     if let Err(error) = runtime.block_on(ws::run(websocket_state.clone())) {
                         websocket_state
                             .set_status(format!("Home Assistant connection failed: {error}"));
+                        websocket_state.set_weather_status(format!("Weather unavailable: {error}"));
                         eprintln!("Home Assistant connection failed: {error}");
                     }
                     std::thread::sleep(std::time::Duration::from_secs(5));
@@ -82,6 +87,14 @@ pub fn main() -> Result<(), slint::PlatformError> {
             brightness.round().clamp(0.0, 255.0) as u8,
         );
     });
+    let request_scene = shared_state.clone();
+    api.on_request_ha_scene_activation(move |entity_id| {
+        request_scene.request_scene_activation(entity_id.to_string());
+    });
+    let request_timer = shared_state.clone();
+    api.on_request_ha_timer_action(move |entity_id, action| {
+        request_timer.request_timer_action(entity_id.to_string(), action.to_string());
+    });
 
     let mut displayed_snapshot = None;
     let timer = Timer::default();
@@ -96,17 +109,33 @@ pub fn main() -> Result<(), slint::PlatformError> {
                     .iter()
                     .map(|room| HaRoom {
                         name: room.name.as_str().into(),
-                        entities: slint::ModelRc::new(slint::VecModel::from(
-                            room.entities.iter().map(to_slint_entity).collect::<Vec<_>>(),
-                        )),
+                        entities: to_slint_entity_groups(&room.entities),
                     })
                     .collect::<Vec<_>>();
                 api.set_ha_entities(slint::ModelRc::new(slint::VecModel::from(entities)));
                 api.set_ha_rooms(slint::ModelRc::new(slint::VecModel::from(rooms)));
+                api.set_ha_entity_groups(to_slint_entity_groups(&snapshot.entity_groups));
                 api.set_ha_unassigned_entities(slint::ModelRc::new(slint::VecModel::from(
                     snapshot.unassigned_entities.iter().map(to_slint_entity).collect::<Vec<_>>(),
                 )));
+                api.set_ha_unassigned_entity_groups(to_slint_entity_groups(
+                    &snapshot.unassigned_entity_groups,
+                ));
                 api.set_ha_status(snapshot.status.as_str().into());
+                api.set_weather_forecast(slint::ModelRc::new(slint::VecModel::from(
+                    snapshot
+                        .weather_forecast
+                        .iter()
+                        .map(|forecast| WeatherData {
+                            condition: to_slint_weather_condition(&forecast.condition),
+                            day: forecast.day.as_str().into(),
+                            temperature: forecast.temperature.as_str().into(),
+                            available: !forecast.day.is_empty(),
+                        })
+                        .collect::<Vec<_>>(),
+                )));
+                api.set_weather_status(snapshot.weather_status.as_str().into());
+                api.set_weather_temperature_unit(snapshot.weather_temperature_unit.as_str().into());
                 displayed_snapshot = Some(snapshot);
             }
 
@@ -121,6 +150,32 @@ pub fn main() -> Result<(), slint::PlatformError> {
                     brightness: entity.brightness as i32,
                     dimmable: entity.dimmable,
                     toggleable: entity.toggleable,
+                }
+            }
+
+            fn to_slint_entity_groups(groups: &state::HaEntityGroups) -> HaEntityGroups {
+                let to_model = |entities: &[state::HaEntity]| {
+                    slint::ModelRc::new(slint::VecModel::from(
+                        entities.iter().map(to_slint_entity).collect::<Vec<_>>(),
+                    ))
+                };
+                HaEntityGroups {
+                    devices: to_model(&groups.devices),
+                    scenes: to_model(&groups.scenes),
+                    timers: to_model(&groups.timers),
+                    other: to_model(&groups.other),
+                }
+            }
+
+            fn to_slint_weather_condition(condition: &str) -> WeatherCondition {
+                match condition {
+                    "sunny" | "clear-night" => WeatherCondition::Sunny,
+                    "partlycloudy" => WeatherCondition::SunnyCloudy,
+                    "rainy" | "pouring" | "snowy" | "snowy-rainy" | "hail" => {
+                        WeatherCondition::Rainy
+                    }
+                    "lightning-rainy" => WeatherCondition::SunnyRainy,
+                    _ => WeatherCondition::Cloudy,
                 }
             }
 

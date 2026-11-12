@@ -23,9 +23,16 @@ export struct HaEntity {
     toggleable: bool,
 }
 
+export struct HaEntityGroups {
+    devices: [HaEntity],
+    scenes: [HaEntity],
+    timers: [HaEntity],
+    other: [HaEntity],
+}
+
 export struct HaRoom {
     name: string,
-    entities: [HaEntity],
+    entities: HaEntityGroups,
 }
 
 import "fonts/Inter-VariableFont.ttf";
@@ -37,8 +44,20 @@ export enum Orientation {
 
 export global AppState {
     in-out property <[HaEntity]> ha-entities: [];
+    in-out property <HaEntityGroups> ha-entity-groups: {
+        devices: [],
+        scenes: [],
+        timers: [],
+        other: [],
+    };
     in-out property <[HaRoom]> ha-rooms: [];
     in-out property <[HaEntity]> ha-unassigned-entities: [];
+    in-out property <HaEntityGroups> ha-unassigned-entity-groups: {
+        devices: [],
+        scenes: [],
+        timers: [],
+        other: [],
+    };
     in-out property <string> ha-status: "Connecting to Home Assistant...";
 
     in-out property <bool> first-run: true;
