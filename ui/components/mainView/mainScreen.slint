@@ -3,11 +3,13 @@
 import { DoorState, Doors } from "../general/doors.slint";
 import { WidgetLoader } from "widgetLoader.slint";
 import { WidgetLoaderSoftwareRenderer } from "widgetLoaderSoftwareRenderer.slint";
-import { Palette as StdPalette, ScrollView } from "std-widgets.slint";
+import { HaDevicesPage } from "haDevicesPage.slint";
+import { Palette as StdPalette } from "std-widgets.slint";
 import { Palette, Animation, Style } from "../../common.slint";
 import { AppState, Orientation } from "../../appState.slint";
 import { HaText } from "../general/haText.slint";
 import { Api } from "../../api.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component PageButton inherits Rectangle {
     in property label <=> t.text;
@@ -16,12 +18,20 @@ export component PageButton inherits Rectangle {
     property <length> default-font-size: AppState.graphics-accelerator-available ? 16px : 22px;
 
     property <bool> selected: AppState.target-page == target-page;
+    property <length> page-width: AppState.orientation == Orientation.landscape ? 120px : 140px;
 
-    width: AppState.orientation == Orientation.landscape ? 120px : 140px;
+    width: page-width;
     height: 40px;
 
     Rectangle {
+        width: root.width;
+        height: root.height;
         t := Text {
+            width: parent.width;
+            height: parent.height;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
             font-size: default-font-size;
             font-weight: FontWeight.normal;
             font-family: AppState.default-font-family;
@@ -37,6 +47,15 @@ export component PageButton inherits Rectangle {
                 color: #ffffff;
             }
         }
+
+        Rectangle {
+            x: parent.width * 25%;
+            y: parent.height - 6px;
+            width: parent.width * 50%;
+            height: 1px;
+            background: white;
+            visible: root.selected;
+        }
     }
 
     TouchArea {
@@ -45,15 +64,6 @@ export component PageButton inherits Rectangle {
             AppState.first-run = false;
             AppState.end-kiosk-mode();
         }
-    }
-}
-
-component PageButtonHighlighter {
-    Rectangle {
-        y: parent.height - parent.height * 15%;
-        width: parent.width * 50%;
-        height: 1px;
-        background: white;
     }
 }
 
@@ -84,11 +94,19 @@ component Backdrop {
 export component MainScreen inherits Rectangle {
     property <int> internal-target-page: AppState.target-page;
     property <bool> transitioning: false;
-    property <bool> show-ha-devices: false;
     in-out property <bool> door-component-loaded: true;
     in-out property <DoorState> initial-door-state: closed;
     property <bool> demo-locked: true;
     property <bool> content-covered: initial-door-state == DoorState.closed;
+    property <length> page-width: AppState.orientation == Orientation.landscape ? 120px : 140px;
+    property <int> ha-page-count: 3 + Api.ha-rooms.length
+        + (Api.ha-unassigned-entities.length > 0 ? 1 : 0);
+
+    changed ha-page-count => {
+        if AppState.target-page >= ha-page-count {
+            AppState.target-page = ha-page-count - 1;
+        }
+    }
 
     width: 100%;
     height: 100%;
@@ -160,101 +178,6 @@ export component MainScreen inherits Rectangle {
         width: 84px;
         height: 25px;
         source: @image-url("../../images/slint-logo-simple-dark.svg");
-    }
-
-    Rectangle {
-        x: 30px;
-        y: 70px;
-        z: 10;
-        width: 180px;
-        height: 34px;
-        border-radius: 17px;
-        background: Palette.alternate-background;
-        HaText {
-            x: 10px;
-            width: parent.width - 20px;
-            height: parent.height;
-            vertical-alignment: center;
-            text: root.show-ha-devices ? "Hide HA devices" : "Home Assistant";
-            color: Palette.foreground;
-            font-size: 13px;
-        }
-        TouchArea {
-            clicked => {
-                root.show-ha-devices = !root.show-ha-devices;
-            }
-        }
-    }
-
-    if root.show-ha-devices: Rectangle {
-        x: 30px;
-        y: 112px;
-        z: 10;
-        width: 380px;
-        height: 400px;
-        border-radius: 14px;
-        border-width: 1px;
-        border-color: Palette.glass-border;
-        background: Palette.background-gradient;
-
-        VerticalLayout {
-            padding: 12px;
-            spacing: 8px;
-
-            HaText {
-                text: "Home Assistant Devices";
-                color: Palette.info-foreground;
-                font-size: 16px;
-                font-weight: FontWeight.semi-bold;
-            }
-
-            HaText {
-                text: Api.ha-status;
-                color: Palette.foreground;
-                font-size: 12px;
-            }
-
-            ScrollView {
-                width: 100%;
-                height: 300px;
-                content-width: self.visible-width;
-                content-height: entity-list.preferred-height;
-                horizontal-scrollbar-policy: always-off;
-                entity-list := VerticalLayout {
-                    spacing: 6px;
-                    for entity in Api.ha-entities: Rectangle {
-                        width: 100%;
-                        height: 48px;
-                        border-radius: 8px;
-                        background: Palette.alternate-background;
-                        VerticalLayout {
-                            x: 10px;
-                            y: 4px;
-                            width: parent.width - 20px;
-                            height: parent.height - 8px;
-                            spacing: 2px;
-                            HaText {
-                                text: entity.name;
-                                color: Palette.alternate-foreground;
-                                font-size: 12px;
-                                overflow: elide;
-                            }
-                            HaText {
-                                text: entity.device-name + " - " + entity.state;
-                                color: Palette.foreground;
-                                font-size: 10px;
-                                overflow: elide;
-                            }
-                        }
-                        if entity.toggleable: TouchArea {
-                            clicked => {
-                                Api.request-ha-state-change(entity.entity-id, entity.state == "on" ? "off" : "on");
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if AppState.orientation == Orientation.landscape: Rectangle {
@@ -420,55 +343,58 @@ export component MainScreen inherits Rectangle {
                     }
                 }
 
-                // We need to have two different highlighter because of #7999
-                if AppState.graphics-accelerator-available: PageButtonHighlighter {
-                    x: home.x + (tabs.spacing + self.width) * AppState.target-page;
-                    animate x {
-                        duration: Animation.transition-duration;
-                        easing: ease-in-out-sine;
-                    }
-                    width: AppState.orientation == Orientation.landscape ? 120px : 140px;
-                    height: 100%;
-                }
+                tab-scroll := ScrollView {
+                    width: parent.width;
+                    height: parent.height;
+                    content-width: tab-content.width;
+                    content-height: self.visible-height;
+                    horizontal-scrollbar-policy: always-off;
 
-                if !AppState.graphics-accelerator-available : PageButtonHighlighter {
-                    x: home.x + (tabs.spacing + self.width) * AppState.target-page;
-                    width: AppState.orientation == Orientation.landscape ? 120px : 140px;
-                    height: 100%;
-                }
+                    tab-content := HorizontalLayout {
+                        width: page-width * ha-page-count
+                            + (AppState.orientation == Orientation.landscape && AppState.graphics-accelerator-available ? 50px : 0px);
+                        height: parent.height;
+                        spacing: 0px;
+                        alignment: start;
+                        y: AppState.graphics-accelerator-available ? 0 : -5px;
 
-                tabs := HorizontalLayout {
-                    alignment: center;
-                    y: AppState.graphics-accelerator-available ? 0 : -5px;
-                    home := PageButton {
-                        label: "Home";
-                    }
-
-                    PageButton {
-                        label: "Kitchen";
-                        target-page: 1;
-                    }
-
-                    PageButton {
-                        label: "Bedroom";
-                        target-page: 2;
-                    }
-
-                    // if AppState.orientation == Orientation.landscape: PageButton {
-                    //     label: "Office";
-                    //     target-page: 3;
-                    // }
-                    if AppState.orientation == Orientation.landscape && AppState.graphics-accelerator-available: Rectangle {
-                        width: 50px;
-                        height: 40px;
-                        lock := Image {
-                            source: @image-url("../../images/lock.svg");
-                            colorize: white;
-                            opacity: lta.pressed ? 100% : 50%;
+                        PageButton {
+                            label: "Home";
+                            target-page: 0;
                         }
-                        lta := TouchArea {
-                            clicked => {
-                                door-component-loaded = true;
+
+                        PageButton {
+                            label: "Kitchen";
+                            target-page: 1;
+                        }
+
+                        PageButton {
+                            label: "Bedroom";
+                            target-page: 2;
+                        }
+
+                        for room[index] in Api.ha-rooms: PageButton {
+                            label: room.name;
+                            target-page: index + 3;
+                        }
+
+                        if Api.ha-unassigned-entities.length > 0: PageButton {
+                            label: "Unassigned";
+                            target-page: 3 + Api.ha-rooms.length;
+                        }
+
+                        if AppState.orientation == Orientation.landscape && AppState.graphics-accelerator-available: Rectangle {
+                            width: 50px;
+                            height: 40px;
+                            lock := Image {
+                                source: @image-url("../../images/lock.svg");
+                                colorize: white;
+                                opacity: lta.pressed ? 100% : 50%;
+                            }
+                            lta := TouchArea {
+                                clicked => {
+                                    door-component-loaded = true;
+                                }
                             }
                         }
                     }
@@ -478,7 +404,29 @@ export component MainScreen inherits Rectangle {
 
         fs-holder := Rectangle {
             y: 20px;
-            if AppState.graphics-accelerator-available: Rectangle {
+            width: root.width;
+            height: root.height;
+            if AppState.current-page >= 3
+                && AppState.current-page < 3 + Api.ha-rooms.length: HaDevicesPage {
+                x: 36px;
+                y: 90px;
+                width: parent.width - 72px;
+                height: parent.height - 120px;
+                room-name: Api.ha-rooms[AppState.current-page - 3].name;
+                entities: Api.ha-rooms[AppState.current-page - 3].entities;
+            }
+
+            if AppState.current-page == 3 + Api.ha-rooms.length
+                && Api.ha-unassigned-entities.length > 0: HaDevicesPage {
+                x: 36px;
+                y: 90px;
+                width: parent.width - 72px;
+                height: parent.height - 120px;
+                room-name: "Unassigned";
+                entities: Api.ha-unassigned-entities;
+            }
+
+            if AppState.current-page < 3 && AppState.graphics-accelerator-available: Rectangle {
                 Backdrop {
                     y: -fs-holder.y;
                 }
@@ -493,7 +441,7 @@ export component MainScreen inherits Rectangle {
                 }
             }
 
-            if !AppState.graphics-accelerator-available: Rectangle {
+            if AppState.current-page < 3 && !AppState.graphics-accelerator-available: Rectangle {
                 Backdrop {
                     y: -fs-holder.y;
                 }
@@ -543,13 +491,13 @@ export component MainScreen inherits Rectangle {
         interval: 5s;
         triggered => {
             if AppState.orientation == Orientation.landscape {
-                if AppState.current-page < 3 {
+                if AppState.current-page < ha-page-count - 1 {
                     AppState.target-page = AppState.target-page + 1;
                 } else {
                     AppState.target-page = 0;
                 }
             } else {
-                if AppState.current-page < 2 {
+                if AppState.current-page < ha-page-count - 1 {
                     AppState.target-page = AppState.target-page + 1;
                 } else {
                     AppState.target-page = 0;

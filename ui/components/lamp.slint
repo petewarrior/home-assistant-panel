@@ -9,9 +9,43 @@ import { HaText } from "general/haText.slint";
 
 export component Lamp inherits Control {
     in property <length> tilePadding: (root.height > Measurements.small-height-tile) ? 18px : 9px;
+    in property <bool> home-assistant-controlled: false;
+    in property <bool> home-assistant-on: false;
+    in property <bool> home-assistant-dimmable: false;
+    in property <float> home-assistant-brightness: 255;
+    callback home-assistant-toggle(bool);
+    callback home-assistant-brightness-change(float);
 
     show-label: false;
     tile-shadow-blur: 0px;
+
+    function sync-home-assistant-state() {
+        slider.anim-duration = 200ms;
+        slider.animated-value = root.home-assistant-on
+            ? root.home-assistant-brightness * slider.maxValue / 255
+            : 0;
+        if root.home-assistant-on {
+            root.saved-value = slider.animated-value;
+        }
+    }
+
+    changed home-assistant-on => {
+        if root.home-assistant-controlled {
+            root.sync-home-assistant-state();
+        }
+    }
+
+    changed home-assistant-brightness => {
+        if root.home-assistant-controlled && root.home-assistant-dimmable {
+            root.sync-home-assistant-state();
+        }
+    }
+
+    init => {
+        if root.home-assistant-controlled {
+            root.sync-home-assistant-state();
+        }
+    }
 
     property <bool> is-dragging: false;
     property <length> drag-threshold: 5px;
@@ -36,6 +70,16 @@ export component Lamp inherits Control {
                 source: @image-url("../images/lamp/0024.png");
                 opacity: slider.value / 24;
             }
+
+            TouchArea {
+                enabled: root.home-assistant-controlled;
+                width: 100%;
+                height: parent.height - slider.height * 2 - tilePadding;
+                clicked => {
+                    AppState.end-kiosk-mode();
+                    root.home-assistant-toggle(!root.home-assistant-on);
+                }
+            }
         }
 
         v := VerticalLayout {
@@ -53,13 +97,21 @@ export component Lamp inherits Control {
             slider := FancySlider {
                 maxValue: 24;
                 value: 22;
+                visible: !root.home-assistant-controlled || root.home-assistant-dimmable;
+                interactive: !root.home-assistant-controlled || root.home-assistant-dimmable;
                 width: root.width * 0.8;
                 icon: @image-url("../images/brightness.svg");
                 colorize-icon: Colors.black;
+                user-value-changed(value) => {
+                    if root.home-assistant-controlled && root.home-assistant-dimmable {
+                        root.home-assistant-brightness-change(value * 255 / self.maxValue);
+                    }
+                }
             }
         }
     }
     TouchArea {
+        enabled: !root.home-assistant-controlled;
         clicked => {
             AppState.end-kiosk-mode();
             if !root.is-dragging {
@@ -73,22 +125,24 @@ export component Lamp inherits Control {
             }
         }
         moved => {
-            if !slider.first-touch {
-                slider.first-touch = true;
-                slider.initial-position = self.mouse-x;
-                slider.initial-value = (self.mouse-x / self.width) * (slider.maxValue - slider.minValue) + slider.minValue;
-                slider.previous-value = slider.value;
-                slider.anim-duration = 0ms;
-            } else {
-                if Math.abs(self.mouse-x - slider.initial-position) > root.drag-threshold {
-                    root.is-dragging = true;
-                }
+            if !root.home-assistant-controlled {
+                if !slider.first-touch {
+                    slider.first-touch = true;
+                    slider.initial-position = self.mouse-x;
+                    slider.initial-value = (self.mouse-x / self.width) * (slider.maxValue - slider.minValue) + slider.minValue;
+                    slider.previous-value = slider.value;
+                    slider.anim-duration = 0ms;
+                } else {
+                    if Math.abs(self.mouse-x - slider.initial-position) > root.drag-threshold {
+                        root.is-dragging = true;
+                    }
 
-                if root.is-dragging {
-                    slider.change-value = ((self.mouse-x / self.width) * (slider.maxValue - slider.minValue) + slider.minValue) - slider.initial-value;
-                    slider.value = Math.clamp(slider.previous-value + slider.change-value, root.drag-min-value, slider.maxValue);
-                    slider.animated-value = slider.value;
-                    root.saved-value = slider.value;
+                    if root.is-dragging {
+                        slider.change-value = ((self.mouse-x / self.width) * (slider.maxValue - slider.minValue) + slider.minValue) - slider.initial-value;
+                        slider.value = Math.clamp(slider.previous-value + slider.change-value, root.drag-min-value, slider.maxValue);
+                        slider.animated-value = slider.value;
+                        root.saved-value = slider.value;
+                    }
                 }
             }
         }

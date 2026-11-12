@@ -8,6 +8,7 @@ export component FancySlider inherits Rectangle {
     in property <float> minValue: 0;
     in property <float> maxValue: 1;
     in property <image> icon;
+    in property <bool> interactive: true;
     out property <bool> active;
     in property <color> colorize-icon: Palette.slider-background;
     in-out property <duration> anim-duration: 300ms;
@@ -16,8 +17,10 @@ export component FancySlider inherits Rectangle {
     in-out property <float> initial-value;
     in-out property <float> previous-value;
     in-out property <float> change-value;
+    property <bool> has-moved: false;
 
     callback toggle();
+    callback user-value-changed(float);
 
     toggle => {
         if value > 0.05 {
@@ -48,32 +51,35 @@ export component FancySlider inherits Rectangle {
     border-radius: self.height / 2;
 
     TouchArea {
+        enabled: root.interactive;
         width: 100%;
         height: 300%;
         y: parent.height / 2 - self.height / 2;
 
-        clicked => {
-            if self.mouse-x == initial-position {
-                anim-duration = 300ms;
-                animated-value = (self.mouse-x / self.width) * (maxValue - minValue) + minValue;
-            }
-        }
         moved => {
-            if !first-touch {
-                first-touch = true;
-                initial-position = self.mouse-x;
-                initial-value = (self.mouse-x / self.width) * (maxValue - minValue) + minValue;
-                previous-value = value;
-                anim-duration = 0ms;
-            } else {
-                change-value = ((self.mouse-x / self.width) * (maxValue - minValue) + minValue) - initial-value;
-                value = Math.clamp(previous-value + change-value, minValue, maxValue);
-                animated-value = value;
-            }
+            has-moved = true;
+            anim-duration = 0ms;
+            value = Math.clamp(
+                (self.mouse-x / self.width) * (maxValue - minValue) + minValue,
+                minValue,
+                maxValue
+            );
+            animated-value = value;
         }
 
         changed pressed => {
             if !self.pressed {
+                if !has-moved {
+                    anim-duration = 0ms;
+                    value = Math.clamp(
+                        (self.mouse-x / self.width) * (maxValue - minValue) + minValue,
+                        minValue,
+                        maxValue
+                    );
+                    animated-value = value;
+                }
+                root.user-value-changed(value);
+                has-moved = false;
                 first-touch = false;
             }
         }

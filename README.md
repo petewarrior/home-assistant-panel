@@ -15,8 +15,11 @@ Set `HA_BASE_URL` and `HA_TOKEN` in `rust/.env` to connect a native build to Hom
 Use the base URL, such as `http://homeassistant.local:8123`, and a Home Assistant long-lived access token.
 Keep `rust/.env` out of version control.
 
-Open the Home Assistant button in the demo to view registered devices and their entity states.
-Tap a light, switch, input boolean, fan, or media player entity to request an on/off state change.
+Home Assistant areas appear as pages in the existing room navigation.
+Devices without an assigned area appear on the Unassigned page.
+The pages use the demo's Lamp component for lights.
+Tap a lamp image to toggle it, or use its slider to change brightness.
+Tap a supported entity to request an on/off state change.
 Browser builds don't connect to Home Assistant.
 
 ## Building and running on iOS

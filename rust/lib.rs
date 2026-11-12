@@ -75,6 +75,13 @@ pub fn main() -> Result<(), slint::PlatformError> {
     api.on_request_ha_state_change(move |entity_id, value| {
         request_state.request_state_change(entity_id.to_string(), value.to_string());
     });
+    let request_brightness = shared_state.clone();
+    api.on_request_ha_brightness_change(move |entity_id, brightness| {
+        request_brightness.request_brightness_change(
+            entity_id.to_string(),
+            brightness.round().clamp(0.0, 255.0) as u8,
+        );
+    });
 
     let mut displayed_snapshot = None;
     let timer = Timer::default();
@@ -83,20 +90,38 @@ pub fn main() -> Result<(), slint::PlatformError> {
             let api = app.global::<Api>();
             let snapshot = shared_state.snapshot();
             if displayed_snapshot.as_ref() != Some(&snapshot) {
-                let entities = snapshot
-                    .entities
+                let entities = snapshot.entities.iter().map(to_slint_entity).collect::<Vec<_>>();
+                let rooms = snapshot
+                    .rooms
                     .iter()
-                    .map(|entity| HaEntity {
-                        entity_id: entity.entity_id.as_str().into(),
-                        device_name: entity.device_name.as_str().into(),
-                        name: entity.name.as_str().into(),
-                        state: entity.state.as_str().into(),
-                        toggleable: entity.toggleable,
+                    .map(|room| HaRoom {
+                        name: room.name.as_str().into(),
+                        entities: slint::ModelRc::new(slint::VecModel::from(
+                            room.entities.iter().map(to_slint_entity).collect::<Vec<_>>(),
+                        )),
                     })
                     .collect::<Vec<_>>();
                 api.set_ha_entities(slint::ModelRc::new(slint::VecModel::from(entities)));
+                api.set_ha_rooms(slint::ModelRc::new(slint::VecModel::from(rooms)));
+                api.set_ha_unassigned_entities(slint::ModelRc::new(slint::VecModel::from(
+                    snapshot.unassigned_entities.iter().map(to_slint_entity).collect::<Vec<_>>(),
+                )));
                 api.set_ha_status(snapshot.status.as_str().into());
                 displayed_snapshot = Some(snapshot);
+            }
+
+            fn to_slint_entity(entity: &state::HaEntity) -> HaEntity {
+                HaEntity {
+                    entity_id: entity.entity_id.as_str().into(),
+                    device_name: entity.device_name.as_str().into(),
+                    area_name: entity.area_name.as_str().into(),
+                    domain: entity.domain.as_str().into(),
+                    name: entity.name.as_str().into(),
+                    state: entity.state.as_str().into(),
+                    brightness: entity.brightness as i32,
+                    dimmable: entity.dimmable,
+                    toggleable: entity.toggleable,
+                }
             }
 
             let now = Local::now();

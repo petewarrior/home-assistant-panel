@@ -1,7 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 
-import { AppState, HaEntity, Orientation } from "appState.slint";
+import { AppState, HaEntity, HaRoom, Orientation } from "appState.slint";
 import { Date, Time } from "std-widgets.slint";
 
 export enum WeatherCondition {
@@ -19,8 +19,11 @@ export struct WeatherData {
 
 export global Api {
     in-out property <[HaEntity]> ha-entities <=> AppState.ha-entities;
+    in-out property <[HaRoom]> ha-rooms <=> AppState.ha-rooms;
+    in-out property <[HaEntity]> ha-unassigned-entities <=> AppState.ha-unassigned-entities;
     in-out property <string> ha-status <=> AppState.ha-status;
     callback request-ha-state-change(string, string);
+    callback request-ha-brightness-change(string, float);
 
     in property <float> indoor-temperature: 22.0;
     in property <float> outdoor-temperature: 24.0;

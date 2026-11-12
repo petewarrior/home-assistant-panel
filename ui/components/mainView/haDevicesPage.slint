@@ -1,0 +1,98 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "../../common.slint";
+import { HaEntity } from "../../appState.slint";
+import { HaText } from "../general/haText.slint";
+import { HaDeviceCard } from "../haDeviceCard.slint";
+import { Lamp } from "../lamp.slint";
+import { Api } from "../../api.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component HaDevicesPage inherits Rectangle {
+    in property <string> room-name;
+    in property <[HaEntity]> entities;
+    property <int> grid-columns: 3;
+
+    width: 100%;
+    height: 100%;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        HaText {
+            text: root.room-name;
+            color: Palette.info-foreground;
+            font-size: 22px;
+            font-weight: FontWeight.semi-bold;
+        }
+
+        HaText {
+            text: Api.ha-status;
+            color: Palette.foreground;
+            font-size: 12px;
+            overflow: elide;
+        }
+
+        if root.entities.length > 0: ScrollView {
+            width: 100%;
+            height: root.height - 70px;
+            content-width: self.visible-width;
+            content-height: device-grid.preferred-height;
+            horizontal-scrollbar-policy: always-off;
+
+            device-grid := GridLayout {
+                spacing: 12px;
+
+                for entity[index] in root.entities: Rectangle {
+                    row: index / root.grid-columns;
+                    col: Math.mod(index, root.grid-columns);
+                    width: (root.width - 48px) / root.grid-columns;
+                    height: self.width * 0.75;
+
+                    if entity.domain == "light": Lamp {
+                        width: 100%;
+                        height: 100%;
+                        name: entity.name;
+                        id: entity.entity-id;
+                        home-assistant-controlled: true;
+                        home-assistant-on: entity.state == "on";
+                        home-assistant-dimmable: entity.dimmable;
+                        home-assistant-brightness: entity.brightness;
+                        home-assistant-toggle(is-on) => {
+                            Api.request-ha-state-change(entity.entity-id, is-on ? "on" : "off");
+                        }
+                        home-assistant-brightness-change(brightness) => {
+                            if brightness < 0.5 {
+                                Api.request-ha-state-change(entity.entity-id, "off");
+                            } else {
+                                Api.request-ha-brightness-change(entity.entity-id, brightness);
+                            }
+                        }
+                    }
+
+                    if entity.domain != "light": HaDeviceCard {
+                        width: 100%;
+                        height: 100%;
+                        entity-id: entity.entity-id;
+                        device-name: entity.device-name;
+                        area-name: entity.area-name;
+                        name: entity.name;
+                        state: entity.state;
+                        toggleable: entity.toggleable;
+                        state-change(entity-id, state) => {
+                            Api.request-ha-state-change(entity-id, state);
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.entities.length == 0: HaText {
+            text: "No devices in this room";
+            color: Palette.foreground;
+            font-size: 14px;
+        }
+    }
+}

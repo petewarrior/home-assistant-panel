@@ -1,0 +1,88 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: MIT
+
+import { Palette } from "../common.slint";
+import { Control } from "control.slint";
+import { HaText } from "general/haText.slint";
+
+export component HaDeviceCard inherits Rectangle {
+    in property <string> entity-id;
+    in property <string> device-name;
+    in property <string> area-name;
+    in property <string> name;
+    in property <string> state;
+    in property <bool> toggleable;
+    callback state-change(string, string);
+
+    width: 100%;
+    height: 120px;
+
+    Control {
+        width: 100%;
+        height: 100%;
+        name: root.name;
+        id: root.entity-id;
+        type-label: false;
+        name-label: false;
+        control-label: false;
+        show-label: false;
+    }
+
+    VerticalLayout {
+        x: 18px;
+        y: 12px;
+        width: parent.width - 36px;
+        height: parent.height - 24px;
+        spacing: 6px;
+
+        HaText {
+            text: root.area-name + " - " + root.device-name;
+            color: Palette.control-alternate-foreground;
+            font-size: 11px;
+            overflow: elide;
+        }
+
+        HaText {
+            text: root.name;
+            color: Palette.control-foreground;
+            font-size: 17px;
+            font-weight: FontWeight.medium;
+            overflow: elide;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            Rectangle {
+                width: 100px;
+                height: 24px;
+                border-radius: 12px;
+                background: root.state == "on" ? Palette.accent-background : Palette.control-alternate-background;
+                HaText {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text: root.state;
+                    color: Palette.control-foreground;
+                    font-size: 11px;
+                    overflow: elide;
+                }
+            }
+
+            HaText {
+                text: root.toggleable ? "Tap to toggle" : root.entity-id;
+                color: Palette.control-alternate-foreground;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+    }
+
+    TouchArea {
+        enabled: root.toggleable;
+        clicked => {
+            root.state-change(root.entity-id, root.state == "on" ? "off" : "on");
+        }
+    }
+}

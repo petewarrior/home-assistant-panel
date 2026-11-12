@@ -14,9 +14,18 @@ export struct ComponentData {
 export struct HaEntity {
     entity_id: string,
     device_name: string,
+    area_name: string,
+    domain: string,
     name: string,
     state: string,
+    brightness: int,
+    dimmable: bool,
     toggleable: bool,
+}
+
+export struct HaRoom {
+    name: string,
+    entities: [HaEntity],
 }
 
 import "fonts/Inter-VariableFont.ttf";
@@ -28,6 +37,8 @@ export enum Orientation {
 
 export global AppState {
     in-out property <[HaEntity]> ha-entities: [];
+    in-out property <[HaRoom]> ha-rooms: [];
+    in-out property <[HaEntity]> ha-unassigned-entities: [];
     in-out property <string> ha-status: "Connecting to Home Assistant...";
 
     in-out property <bool> first-run: true;
@@ -43,6 +54,8 @@ export global AppState {
     out property <int> layout-offset: current-page * component-details.length;
     in property <length> window-width: 960px;
     in property <length> window-height: 540px;
+    // in property <length> window-width: 480px;
+    // in property <length> window-height: 320px;
     out property <Orientation> orientation: window-width > window-height ? landscape : portrait;
     in property <bool> graphics-accelerator-available: true;
 

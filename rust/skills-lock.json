@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "skills": {
+    "ha-websocket-api": {
+      "source": "L3DigitalNet/Claude-Code-Plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/home-assistant-dev/skills/ha-websocket-api/SKILL.md",
+      "computedHash": "b944c84230ddfd6e1950cbf24e38410b694cba0c17ee514fa97a5ddbf1ea9f3b"
+    }
+  }
+}
