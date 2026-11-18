@@ -14,6 +14,9 @@ pub struct HaEntity {
     pub state: String,
     pub brightness: u8,
     pub dimmable: bool,
+    pub color_capable: bool,
+    pub hue: u16,
+    pub saturation: u8,
     pub toggleable: bool,
 }
 
@@ -48,6 +51,7 @@ pub struct StateChange {
 #[derive(Clone, Debug)]
 pub enum HomeAssistantAction {
     StateChange(StateChange),
+    ColorChange { entity_id: String, hue: u16, saturation: u8 },
     ActivateScene(String),
     TimerAction { entity_id: String, action: String },
 }
@@ -147,7 +151,13 @@ impl SharedState {
         self.lock().entities = entities;
     }
 
-    pub fn update_entity_state(&self, entity_id: &str, value: &str, brightness: Option<u8>) {
+    pub fn update_entity_state(
+        &self,
+        entity_id: &str,
+        value: &str,
+        brightness: Option<u8>,
+        color: Option<(u16, u8)>,
+    ) {
         let mut state = self.lock();
         if let Some(entity) = state.entities.iter_mut().find(|entity| entity.entity_id == entity_id)
         {
@@ -158,6 +168,10 @@ impl SharedState {
                 entity.brightness = brightness;
             } else if value == "on" && entity.brightness == 0 {
                 entity.brightness = u8::MAX;
+            }
+            if let Some((hue, saturation)) = color {
+                entity.hue = hue;
+                entity.saturation = saturation;
             }
         }
     }
@@ -176,6 +190,14 @@ impl SharedState {
             state: "on".to_owned(),
             brightness: Some(brightness),
         }));
+    }
+
+    pub fn request_color_change(&self, entity_id: String, hue: u16, saturation: u8) {
+        self.lock().pending_changes.push_back(HomeAssistantAction::ColorChange {
+            entity_id,
+            hue: hue % 360,
+            saturation: saturation.min(100),
+        });
     }
 
     pub fn request_scene_activation(&self, entity_id: String) {
@@ -224,13 +246,18 @@ mod tests {
             state: "off".into(),
             brightness: 0,
             dimmable: true,
+            color_capable: false,
+            hue: 0,
+            saturation: 100,
             toggleable: true,
         }]);
 
-        state.update_entity_state("light.kitchen", "on", Some(180));
+        state.update_entity_state("light.kitchen", "on", Some(180), Some((210, 55)));
 
-        assert_eq!(state.snapshot().entities[0].state, "on");
-        assert_eq!(state.snapshot().entities[0].brightness, 180);
+        let entity = &state.snapshot().entities[0];
+        assert_eq!(entity.state, "on");
+        assert_eq!(entity.brightness, 180);
+        assert_eq!((entity.hue, entity.saturation), (210, 55));
     }
 
     #[test]
@@ -246,6 +273,21 @@ mod tests {
                 if change.entity_id == "light.kitchen" && change.state == "on"
         ));
         assert!(state.take_pending_changes().is_empty());
+    }
+
+    #[test]
+    fn color_change_requests_clamp_hue_and_saturation() {
+        let state = SharedState::default();
+        state.request_color_change("light.kitchen".into(), 721, 120);
+
+        assert!(matches!(
+            state.take_pending_changes().as_slice(),
+            [HomeAssistantAction::ColorChange {
+                entity_id,
+                hue: 1,
+                saturation: 100,
+            }] if entity_id == "light.kitchen"
+        ));
     }
 
     #[test]
@@ -289,6 +331,9 @@ mod tests {
                 state: "off".into(),
                 brightness: 0,
                 dimmable: true,
+                color_capable: false,
+                hue: 0,
+                saturation: 100,
                 toggleable: true,
             },
             HaEntity {
@@ -300,6 +345,9 @@ mod tests {
                 state: "off".into(),
                 brightness: 0,
                 dimmable: true,
+                color_capable: false,
+                hue: 0,
+                saturation: 100,
                 toggleable: true,
             },
         ]);

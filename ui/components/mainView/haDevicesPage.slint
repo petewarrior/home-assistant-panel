@@ -13,6 +13,24 @@ export component HaDevicesPage inherits Rectangle {
     in property <string> room-name;
     in property <HaEntityGroups> entities;
     in property <bool> show-weather: false;
+    property <bool> color-picker-visible: false;
+    property <string> selected-light-id: "";
+    property <string> selected-light-name: "";
+    property <int> selected-hue: 0;
+    property <int> selected-saturation: 100;
+
+    function open-color-picker(entity-id: string, entity-name: string, hue: int, saturation: int) {
+        root.selected-light-id = entity-id;
+        root.selected-light-name = entity-name;
+        root.selected-hue = hue;
+        root.selected-saturation = saturation;
+        root.color-picker-visible = true;
+    }
+
+    function set-picker-position(x: float, y: float) {
+        root.selected-hue = Math.round(Math.clamp(x, 0.0, 1.0) * 359.0);
+        root.selected-saturation = Math.round((1.0 - Math.clamp(y, 0.0, 1.0)) * 100.0);
+    }
 
     width: 100%;
     height: 100%;
@@ -76,21 +94,156 @@ export component HaDevicesPage inherits Rectangle {
                 HaEntitySection {
                     title: "Devices";
                     entities: root.entities.devices;
+                    color-picker-requested(entity-id, entity-name, hue, saturation) => {
+                        root.open-color-picker(entity-id, entity-name, hue, saturation);
+                    }
                 }
 
                 HaEntitySection {
                     title: "Scenes";
                     entities: root.entities.scenes;
+                    color-picker-requested(entity-id, entity-name, hue, saturation) => {
+                        root.open-color-picker(entity-id, entity-name, hue, saturation);
+                    }
                 }
 
                 HaEntitySection {
                     title: "Timers";
                     entities: root.entities.timers;
+                    color-picker-requested(entity-id, entity-name, hue, saturation) => {
+                        root.open-color-picker(entity-id, entity-name, hue, saturation);
+                    }
                 }
 
                 HaEntitySection {
                     title: "Other";
                     entities: root.entities.other;
+                    color-picker-requested(entity-id, entity-name, hue, saturation) => {
+                        root.open-color-picker(entity-id, entity-name, hue, saturation);
+                    }
+                }
+            }
+        }
+    }
+
+    if root.color-picker-visible: Rectangle {
+        width: root.width;
+        height: root.height;
+        background: #000000.transparentize(35%);
+
+        TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: root.width < 440px ? root.width - 24px : 416px;
+            height: root.height < 460px ? root.height - 24px : 436px;
+            border-radius: 8px;
+            background: Palette.control-background;
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+
+                HaText {
+                    text: root.selected-light-name;
+                    color: Palette.control-foreground;
+                    font-size: 18px;
+                    font-weight: FontWeight.semi-bold;
+                }
+
+                Rectangle {
+                    width: 100%;
+                    height: parent.height - 112px;
+                    clip: true;
+                    border-radius: 6px;
+
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.67%, #00ff00 33.33%, #00ffff 50%, #0000ff 66.67%, #ff00ff 83.33%, #ff0000 100%);
+                    }
+
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: @linear-gradient(180deg, #ffffff 0%, #ffffff.transparentize(100%) 100%);
+                    }
+
+                    Rectangle {
+                        x: root.selected-hue * (parent.width - self.width) / 359;
+                        y: (100 - root.selected-saturation) * (parent.height - self.height) / 100;
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 2px;
+                        border-color: white;
+                        background: #000000.transparentize(100%);
+                    }
+
+                    TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        moved => {
+                            if self.pressed {
+                                root.set-picker-position(self.mouse-x / self.width, self.mouse-y / self.height);
+                            }
+                        }
+                        changed pressed => {
+                            if self.pressed {
+                                root.set-picker-position(self.mouse-x / self.width, self.mouse-y / self.height);
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+
+                    Rectangle {
+                        width: 88px;
+                        height: 34px;
+                        border-radius: 4px;
+                        background: Palette.control-alternate-background;
+                        HaText {
+                            width: 100%;
+                            height: 100%;
+                            text: "Cancel";
+                            color: Palette.control-foreground;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.color-picker-visible = false; }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 88px;
+                        height: 34px;
+                        border-radius: 4px;
+                        background: Palette.accent-background;
+                        HaText {
+                            width: 100%;
+                            height: 100%;
+                            text: "Apply";
+                            color: Palette.control-foreground;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => {
+                                Api.request-ha-color-change(root.selected-light-id, root.selected-hue, root.selected-saturation);
+                                root.color-picker-visible = false;
+                            }
+                        }
+                    }
                 }
             }
         }

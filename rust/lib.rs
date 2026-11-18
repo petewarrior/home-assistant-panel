@@ -87,6 +87,14 @@ pub fn main() -> Result<(), slint::PlatformError> {
             brightness.round().clamp(0.0, 255.0) as u8,
         );
     });
+    let request_color = shared_state.clone();
+    api.on_request_ha_color_change(move |entity_id, hue, saturation| {
+        request_color.request_color_change(
+            entity_id.to_string(),
+            hue.clamp(0, 359) as u16,
+            saturation.clamp(0, 100) as u8,
+        );
+    });
     let request_scene = shared_state.clone();
     api.on_request_ha_scene_activation(move |entity_id| {
         request_scene.request_scene_activation(entity_id.to_string());
@@ -149,6 +157,9 @@ pub fn main() -> Result<(), slint::PlatformError> {
                     state: entity.state.as_str().into(),
                     brightness: entity.brightness as i32,
                     dimmable: entity.dimmable,
+                    color_capable: entity.color_capable,
+                    hue: entity.hue as i32,
+                    saturation: entity.saturation as i32,
                     toggleable: entity.toggleable,
                 }
             }

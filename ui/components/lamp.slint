@@ -1,6 +1,6 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
-import { Measurements, Colors, Style } from "../common.slint";
+import { Measurements, Colors, Palette, Style } from "../common.slint";
 import { FancySlider } from "general/fancySlider.slint";
 import { Control } from "control.slint";
 import { AppState } from "../appState.slint";
@@ -13,6 +13,8 @@ export component Lamp inherits Control {
     in property <bool> home-assistant-on: false;
     in property <bool> home-assistant-dimmable: false;
     in property <float> home-assistant-brightness: 255;
+    in property <bool> home-assistant-color-capable: false;
+    callback home-assistant-open-color-picker();
     callback home-assistant-toggle(bool);
     callback home-assistant-brightness-change(float);
 
@@ -92,6 +94,40 @@ export component Lamp inherits Control {
                 font-size: Style.tile-title-font-size;
                 font-weight: FontWeight.extra-light;
                 color: white;
+            }
+
+            if root.home-assistant-controlled && root.home-assistant-color-capable: Rectangle {
+                width: 76px;
+                height: 26px;
+                border-radius: 13px;
+                background: Palette.control-alternate-background;
+
+                HorizontalLayout {
+                    width: 100%;
+                    height: 100%;
+                    alignment: center;
+                    spacing: 6px;
+
+                    Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        background: @linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+                    }
+
+                    HaText {
+                        text: "Color";
+                        color: Palette.control-foreground;
+                        font-size: 11px;
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        AppState.end-kiosk-mode();
+                        root.home-assistant-open-color-picker();
+                    }
+                }
             }
 
             slider := FancySlider {

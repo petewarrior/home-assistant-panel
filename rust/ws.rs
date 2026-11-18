@@ -150,14 +150,21 @@ fn device_entities(
             let domain = entity_id.split_once('.')?.0;
             let device_id = entity["device_id"].as_str();
             let attributes = &current["attributes"];
-            let dimmable = if let Some(color_modes) = attributes["supported_color_modes"].as_array()
-            {
+            let supported_color_modes = attributes["supported_color_modes"].as_array();
+            let dimmable = if let Some(color_modes) = supported_color_modes {
                 color_modes.iter().any(|mode| {
                     mode.as_str().is_some_and(|mode| mode != "onoff" && mode != "unknown")
                 })
             } else {
                 attributes["brightness"].as_u64().is_some()
             };
+            let color_capable = supported_color_modes.is_some_and(|color_modes| {
+                color_modes.iter().any(|mode| {
+                    matches!(mode.as_str(), Some("hs" | "xy" | "rgb" | "rgbw" | "rgbww"))
+                })
+            }) || attributes["hs_color"].is_array()
+                || attributes["rgb_color"].is_array();
+            let (hue, saturation) = color_from_attributes(attributes).unwrap_or((0, 100));
             let area_id = entity["area_id"].as_str().or_else(|| {
                 device_id
                     .and_then(|device_id| devices_by_id.get(device_id))
@@ -191,6 +198,9 @@ fn device_entities(
                     .and_then(|value| u8::try_from(value).ok())
                     .unwrap_or_else(|| if current["state"] == "on" { u8::MAX } else { 0 }),
                 dimmable,
+                color_capable,
+                hue,
+                saturation,
                 toggleable: matches!(
                     domain,
                     "light" | "switch" | "input_boolean" | "fan" | "media_player"
@@ -200,13 +210,47 @@ fn device_entities(
         .collect()
 }
 
-fn state_from_event(message: &Value) -> Option<(String, String, Option<u8>)> {
+fn color_from_attributes(attributes: &Value) -> Option<(u16, u8)> {
+    if let Some(hs_color) = attributes["hs_color"].as_array() {
+        let hue = hs_color.first()?.as_f64()?;
+        let saturation = hs_color.get(1)?.as_f64()?;
+        if !hue.is_finite() || !saturation.is_finite() {
+            return None;
+        }
+        return Some((
+            hue.rem_euclid(360.0).round() as u16 % 360,
+            saturation.clamp(0.0, 100.0).round() as u8,
+        ));
+    }
+
+    let rgb = attributes["rgb_color"].as_array()?;
+    let red = (rgb.first()?.as_f64()? / 255.0).clamp(0.0, 1.0);
+    let green = (rgb.get(1)?.as_f64()? / 255.0).clamp(0.0, 1.0);
+    let blue = (rgb.get(2)?.as_f64()? / 255.0).clamp(0.0, 1.0);
+    let maximum = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let delta = maximum - minimum;
+    let hue = if delta == 0.0 {
+        0.0
+    } else if maximum == red {
+        60.0 * ((green - blue) / delta).rem_euclid(6.0)
+    } else if maximum == green {
+        60.0 * ((blue - red) / delta + 2.0)
+    } else {
+        60.0 * ((red - green) / delta + 4.0)
+    };
+    let saturation = if maximum == 0.0 { 0.0 } else { delta / maximum * 100.0 };
+    Some((hue.round() as u16 % 360, saturation.round().clamp(0.0, 100.0) as u8))
+}
+
+fn state_from_event(message: &Value) -> Option<(String, String, Option<u8>, Option<(u16, u8)>)> {
     let data = &message["event"]["data"];
     let new_state = &data["new_state"];
     Some((
         data["entity_id"].as_str()?.to_owned(),
         new_state["state"].as_str()?.to_owned(),
         new_state["attributes"]["brightness"].as_u64().and_then(|value| u8::try_from(value).ok()),
+        color_from_attributes(&new_state["attributes"]),
     ))
 }
 
@@ -360,6 +404,7 @@ async fn refresh_weather_forecast(
 fn service_for(action: &HomeAssistantAction) -> Result<(&str, &str), Error> {
     let (entity_id, expected_domain) = match action {
         HomeAssistantAction::StateChange(change) => (&change.entity_id, None),
+        HomeAssistantAction::ColorChange { entity_id, .. } => (entity_id, Some("light")),
         HomeAssistantAction::ActivateScene(entity_id) => (entity_id, Some("scene")),
         HomeAssistantAction::TimerAction { entity_id, .. } => (entity_id, Some("timer")),
     };
@@ -393,6 +438,9 @@ fn service_for(action: &HomeAssistantAction) -> Result<(&str, &str), Error> {
         HomeAssistantAction::ActivateScene(_) if expected_domain == Some(domain) => {
             Ok((domain, "turn_on"))
         }
+        HomeAssistantAction::ColorChange { .. } if expected_domain == Some(domain) => {
+            Ok((domain, "turn_on"))
+        }
         HomeAssistantAction::TimerAction { action, .. } if expected_domain == Some(domain) => {
             match action.as_str() {
                 "start" | "pause" | "cancel" => Ok((domain, action)),
@@ -405,7 +453,24 @@ fn service_for(action: &HomeAssistantAction) -> Result<(&str, &str), Error> {
         HomeAssistantAction::TimerAction { .. } => {
             Err(format!("Timer actions are not supported for {domain}.{object_id}").into())
         }
+        HomeAssistantAction::ColorChange { .. } => {
+            Err(format!("Color changes are not supported for {domain}.{object_id}").into())
+        }
     }
+}
+
+fn service_data_for(entity_id: &str, action: &HomeAssistantAction) -> Value {
+    let mut service_data = json!({"entity_id": entity_id});
+    match action {
+        HomeAssistantAction::StateChange(StateChange { brightness: Some(brightness), .. }) => {
+            service_data["brightness"] = json!(brightness);
+        }
+        HomeAssistantAction::ColorChange { hue, saturation, .. } => {
+            service_data["hs_color"] = json!([hue, saturation]);
+        }
+        _ => {}
+    }
+    service_data
 }
 
 pub async fn run(state: SharedState) -> Result<(), Error> {
@@ -479,8 +544,8 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
                 let message: Value = serde_json::from_str(text.as_str())?;
 
                 if message["type"] == "event" && message["id"] == subscription_id {
-                    if let Some((entity_id, value, brightness)) = state_from_event(&message) {
-                        state.update_entity_state(&entity_id, &value, brightness);
+                    if let Some((entity_id, value, brightness, color)) = state_from_event(&message) {
+                        state.update_entity_state(&entity_id, &value, brightness, color);
                         if weather_entity.as_deref() == Some(entity_id.as_str()) {
                             refresh_weather_forecast(
                                 &mut ws,
@@ -532,13 +597,11 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
                     let id = next_request_id(&mut request_counter)?;
                     let entity_id = match &change {
                         HomeAssistantAction::StateChange(change) => &change.entity_id,
+                        HomeAssistantAction::ColorChange { entity_id, .. } => entity_id,
                         HomeAssistantAction::ActivateScene(entity_id)
                         | HomeAssistantAction::TimerAction { entity_id, .. } => entity_id,
                     };
-                    let mut service_data = json!({"entity_id": entity_id});
-                    if let HomeAssistantAction::StateChange(StateChange { brightness: Some(brightness), .. }) = &change {
-                        service_data["brightness"] = json!(brightness);
-                    }
+                    let service_data = service_data_for(entity_id, &change);
                     send_json(&mut ws, json!({
                         "id": id,
                         "type": "call_service",
@@ -556,7 +619,8 @@ pub async fn run(state: SharedState) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        device_entities, next_request_id, parse_weather_forecast, select_weather_entity,
+        color_from_attributes, device_entities, next_request_id, parse_weather_forecast,
+        select_weather_entity, service_data_for,
         service_for, state_from_event, weather_temperature_unit,
     };
     use crate::state::{HaEntity, HomeAssistantAction, StateChange};
@@ -602,7 +666,8 @@ mod tests {
             "attributes": {
                 "friendly_name": "Ceiling",
                 "brightness": 128,
-                "supported_color_modes": ["brightness"]
+                "supported_color_modes": ["brightness", "hs"],
+                "hs_color": [210.0, 55.0]
             }
         }]);
 
@@ -615,6 +680,8 @@ mod tests {
         assert_eq!(entities[0].state, "on");
         assert_eq!(entities[0].brightness, 128);
         assert!(entities[0].dimmable);
+        assert!(entities[0].color_capable);
+        assert_eq!((entities[0].hue, entities[0].saturation), (210, 55));
         assert!(entities[0].toggleable);
     }
 
@@ -638,6 +705,21 @@ mod tests {
         let entities = device_entities(&devices, &registry, &json!([]), &states);
 
         assert!(!entities[0].dimmable);
+        assert!(!entities[0].color_capable);
+    }
+
+    #[test]
+    fn supported_color_modes_mark_lights_color_capable() {
+        let registry = json!([{"entity_id": "light.rgb", "disabled_by": null}]);
+        let states = json!([{
+            "entity_id": "light.rgb",
+            "state": "off",
+            "attributes": {"supported_color_modes": ["rgb"]}
+        }]);
+
+        let entities = device_entities(&json!([]), &registry, &json!([]), &states);
+
+        assert!(entities[0].color_capable);
     }
 
     #[test]
@@ -648,7 +730,7 @@ mod tests {
                     "entity_id": "light.ceiling",
                     "new_state": {
                         "state": "on",
-                        "attributes": {"brightness": 128}
+                        "attributes": {"brightness": 128, "hs_color": [210.0, 55.0]}
                     }
                 }
             }
@@ -656,8 +738,13 @@ mod tests {
 
         assert_eq!(
             state_from_event(&event),
-            Some(("light.ceiling".into(), "on".into(), Some(128)))
+            Some(("light.ceiling".into(), "on".into(), Some(128), Some((210, 55))))
         );
+    }
+
+    #[test]
+    fn rgb_color_attributes_are_converted_to_hs() {
+        assert_eq!(color_from_attributes(&json!({"rgb_color": [0, 128, 255]})), Some((210, 100)));
     }
 
     #[test]
@@ -734,6 +821,42 @@ mod tests {
         });
 
         assert_eq!(service_for(&change).unwrap(), ("light", "turn_on"));
+    }
+
+    #[test]
+    fn color_requests_use_the_light_turn_on_service() {
+        let action = HomeAssistantAction::ColorChange {
+            entity_id: "light.ceiling".into(),
+            hue: 210,
+            saturation: 55,
+        };
+
+        assert_eq!(service_for(&action).unwrap(), ("light", "turn_on"));
+    }
+
+    #[test]
+    fn color_requests_send_hs_color_in_service_data() {
+        let action = HomeAssistantAction::ColorChange {
+            entity_id: "light.ceiling".into(),
+            hue: 210,
+            saturation: 55,
+        };
+
+        assert_eq!(
+            service_data_for("light.ceiling", &action),
+            json!({"entity_id": "light.ceiling", "hs_color": [210, 55]})
+        );
+    }
+
+    #[test]
+    fn color_requests_reject_non_light_entities() {
+        let action = HomeAssistantAction::ColorChange {
+            entity_id: "switch.porch".into(),
+            hue: 210,
+            saturation: 55,
+        };
+
+        assert!(service_for(&action).is_err());
     }
 
     #[test]

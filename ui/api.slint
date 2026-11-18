@@ -27,6 +27,7 @@ export global Api {
     in-out property <string> ha-status <=> AppState.ha-status;
     callback request-ha-state-change(string, string);
     callback request-ha-brightness-change(string, float);
+    callback request-ha-color-change(string, int, int);
     callback request-ha-scene-activation(string);
     callback request-ha-timer-action(string, string);
     in-out property <[WeatherData]> weather-forecast: [];

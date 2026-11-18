@@ -11,6 +11,7 @@ import { Api } from "../../api.slint";
 export component HaEntitySection inherits Rectangle {
     in property <string> title;
     in property <[HaEntity]> entities;
+    callback color-picker-requested(string, string, int, int);
     property <int> grid-columns: root.width < 520px ? 1 : (root.width < 760px ? 2 : 3);
     property <length> card-width: (root.width - 24px - (root.grid-columns - 1) * 12px) / root.grid-columns;
     property <length> card-height: root.card-width * 0.75;
@@ -53,11 +54,15 @@ export component HaEntitySection inherits Rectangle {
                     home-assistant-on: entity.state == "on";
                     home-assistant-dimmable: entity.dimmable;
                     home-assistant-brightness: entity.brightness;
+                    home-assistant-color-capable: entity.color-capable;
                     home-assistant-toggle(on) => {
                         Api.request-ha-state-change(entity.entity-id, on ? "on" : "off");
                     }
                     home-assistant-brightness-change(brightness) => {
                         Api.request-ha-brightness-change(entity.entity-id, brightness);
+                    }
+                    home-assistant-open-color-picker => {
+                        root.color-picker-requested(entity.entity-id, entity.name, entity.hue, entity.saturation);
                     }
                 }
 
