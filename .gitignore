@@ -2,4 +2,6 @@
 /home-automation
 /home-automation.exe
 !/node/Info.plist
+esp-idf/
 rust/.env
+rust/target/

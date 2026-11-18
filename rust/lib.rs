@@ -14,13 +14,11 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "sw-renderer")]
 slint::slint! {
-    #[edition = "1.20"]
     export { Api, AppWindow } from "../ui/demo-sw-renderer.slint";
 }
 
 #[cfg(not(feature = "sw-renderer"))]
 slint::slint! {
-    #[edition = "1.20"]
     export { Api, AppWindow } from "../ui/demo.slint";
 }
 

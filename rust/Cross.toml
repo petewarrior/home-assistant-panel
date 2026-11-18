@@ -1,0 +1,12 @@
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+pre-build = [
+    # "cat /etc/os-release",
+    # "dpkg --print-architecture",
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "add-apt-repository universe",
+    "apt-get update",
+    "apt-get install -y libfontconfig1-dev:$CROSS_DEB_ARCH libssl-dev:$CROSS_DEB_ARCH libseat-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH libinput-dev:$CROSS_DEB_ARCH libgbm-dev:$CROSS_DEB_ARCH libudev-dev:$CROSS_DEB_ARCH",
+    "openssl version",
+    "pkg-config --modversion openssl"
+]
