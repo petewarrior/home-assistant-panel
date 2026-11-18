@@ -68,7 +68,7 @@ export component Lamp inherits Control {
             Image {
                 y: 0;
                 source: @image-url("../images/lamp/0024.png");
-                opacity: slider.value / 24;
+                opacity: slider.animated-value / slider.maxValue;
             }
 
             TouchArea {

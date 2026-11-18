@@ -5,6 +5,7 @@ import { Palette } from "../../common.slint";
 import { HaEntity } from "../../appState.slint";
 import { HaText } from "../general/haText.slint";
 import { HaDeviceCard } from "../haDeviceCard.slint";
+import { Lamp } from "../lamp.slint";
 import { Api } from "../../api.slint";
 
 export component HaEntitySection inherits Rectangle {
@@ -43,7 +44,24 @@ export component HaEntitySection inherits Rectangle {
                 width: root.card-width;
                 height: root.card-height;
 
-                HaDeviceCard {
+                if entity.domain == "light": Lamp {
+                    width: 100%;
+                    height: 100%;
+                    name: entity.name;
+                    id: entity.entity-id;
+                    home-assistant-controlled: true;
+                    home-assistant-on: entity.state == "on";
+                    home-assistant-dimmable: entity.dimmable;
+                    home-assistant-brightness: entity.brightness;
+                    home-assistant-toggle(on) => {
+                        Api.request-ha-state-change(entity.entity-id, on ? "on" : "off");
+                    }
+                    home-assistant-brightness-change(brightness) => {
+                        Api.request-ha-brightness-change(entity.entity-id, brightness);
+                    }
+                }
+
+                if entity.domain != "light": HaDeviceCard {
                     width: 100%;
                     height: 100%;
                     entity-id: entity.entity-id;
